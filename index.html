@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#dff3ff" />
+    <meta name="description" content="starseeked, un reproductor de música personalizable inspirado en el cielo." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>starseeked — Tu música, tu cielo</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="sky-backdrop" aria-hidden="true">
+      <div class="sun-glow"></div>
+      <div class="cloud cloud-one"></div>
+      <div class="cloud cloud-two"></div>
+      <div class="cloud cloud-three"></div>
+      <div class="grain"></div>
+    </div>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#top" aria-label="starseeked, inicio">
+          <span class="brand-mark"><span></span><span></span><span></span></span>
+          <span>star<span>seeked</span></span>
+        </a>
+
+        <nav class="main-nav" aria-label="Navegación principal">
+          <p class="nav-label">Explorar</p>
+          <button class="nav-item active" data-view="inicio"><span class="nav-icon">⌂</span>Inicio</button>
+          <button class="nav-item" data-view="biblioteca"><span class="nav-icon">▣</span>Mi biblioteca</button>
+          <button class="nav-item" data-view="favoritos"><span class="nav-icon">♡</span>Favoritos</button>
+          <button class="nav-item" data-view="recientes"><span class="nav-icon">◷</span>Recientes</button>
+          <button class="nav-item" data-view="temas"><span class="nav-icon">✦</span>Temas</button>
+
+          <p class="nav-label playlist-label">Mis listas <button class="tiny-add" id="newPlaylistBtn" aria-label="Crear lista">+</button></p>
+          <div class="playlist-list" id="playlistList">
+            <button class="nav-item playlist-item"><span class="playlist-dot sunset"></span>Amaneceres</button>
+            <button class="nav-item playlist-item"><span class="playlist-dot night"></span>Noches tranquilas</button>
+            <button class="nav-item playlist-item"><span class="playlist-dot aurora"></span>Para concentrarse</button>
+          </div>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="storage-card">
+            <div class="storage-top"><span class="storage-icon">☁</span><span id="trackCountLabel">0 canciones</span></div>
+            <p>Tu música vive aquí</p>
+            <div class="storage-bar"><span></span></div>
+          </div>
+          <button class="customize-button" id="openThemeBtn"><span>✦</span> Personalizar cielo</button>
+          <p class="sidebar-note">Hecho para escuchar el momento.</p>
+        </div>
+      </aside>
+
+      <main class="main-content" id="top">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Hola mama</p>
+          </div>
+          <div class="top-actions">
+            <label class="search-box">
+              <span aria-hidden="true">⌕</span>
+              <input id="searchInput" type="search" placeholder="Buscar en tu cielo" aria-label="Buscar en tu música" />
+              <kbd>/</kbd>
+            </label>
+            <button class="icon-button notification-button" aria-label="Notificaciones"><span>♧</span><i></i></button>
+            <button class="avatar-button" aria-label="Tu perfil">L</button>
+          </div>
+        </header>
+
+        <section class="hero-grid" aria-label="Recomendación del día">
+          <article class="hero-card">
+            <div class="hero-copy">
+              <span class="pill"><span class="spark">✦</span> Tu cielo de hoy</span>
+              <h2>Recuerda beber agua retra</h2>
+              <p>Deja que el ambiente cambie contigo. Elige una atmósfera y empieza a escuchar.</p>
+              <button class="primary-button" id="heroPlayBtn"><span>▶</span> Escuchar ahora</button>
+            </div>
+            <div class="hero-art" aria-hidden="true">
+              <div class="hero-sun"></div>
+              <div class="hero-horizon"></div>
+              <div class="hero-mountain mountain-back"></div>
+              <div class="hero-mountain mountain-front"></div>
+              <div class="hero-cloud cloud-art-one"></div>
+              <div class="hero-cloud cloud-art-two"></div>
+              <span class="hero-star star-one">✦</span><span class="hero-star star-two">·</span>
+            </div>
+          </article>
+
+          <article class="mood-card">
+            <div class="section-heading compact-heading"><div><p class="eyebrow">Temas rápidos</p><h3>Como te sientes hoy?</h3></div><button class="round-arrow" aria-label="Ver más cielos">↗</button></div>
+            <div class="mood-list" id="moodList">
+              <button class="mood-item selected" data-theme="clear"><span class="mood-visual clear-visual"><i></i></span><span><strong>Cielo despejado</strong><small>Ligero y luminoso</small></span><b>›</b></button>
+              <button class="mood-item" data-theme="sunset"><span class="mood-visual sunset-visual"><i></i></span><span><strong>Amanecer suave</strong><small>Calma para empezar</small></span><b>›</b></button>
+              <button class="mood-item" data-theme="night"><span class="mood-visual night-visual"><i></i></span><span><strong>Noche estrellada</strong><small>Profundo y sereno</small></span><b>›</b></button>
+              <button class="mood-item" data-theme="aurora"><span class="mood-visual aurora-visual"><i></i></span><span><strong>Aurora boreal</strong><small>Un poco de magia</small></span><b>›</b></button>
+            </div>
+          </article>
+        </section>
+
+        <section class="content-section" id="librarySection">
+          <div class="section-heading">
+            <div><p class="eyebrow">Tu selección</p><h2 id="sectionTitle">Escuchadas recientemente</h2></div>
+            <div class="section-controls"><button class="text-button" id="addMusicBtn">+ Añadir archivos</button><input id="fileInput" type="file" accept="audio/*,video/*" multiple hidden /><button class="round-arrow" id="viewAllBtn" aria-label="Ver todas las canciones">↗</button></div>
+          </div>
+          <div class="track-table" id="trackTable">
+            <div class="track-table-head"><span>#</span><span>Título</span><span>Álbum</span><span>Duración</span><span></span></div>
+            <div id="trackRows"></div>
+            <div class="empty-state" id="emptyState"><div class="empty-cloud">☁</div><h3>Aquí aparecerá tu música</h3><p>MP3, MP4 y otros archivos compatibles</p><button class="primary-button small-button" id="emptyAddBtn">Añadir archivos</button></div>
+          </div>
+        </section>
+
+        <section class="content-section inspiration-section">
+          <div class="section-heading"><div><p class="eyebrow">Inspiración</p><h2>Diseña tu ambiente</h2></div><button class="text-button" id="inspirationThemeBtn">Ver temas <span>↗</span></button></div>
+          <div class="theme-strip">
+            <button class="theme-preview theme-preview-sunset" data-theme="sunset"><span>☼</span><strong>Hora dorada</strong><small>Warm &amp; easy</small></button>
+            <button class="theme-preview theme-preview-night" data-theme="night"><span>✦</span><strong>Después de las diez</strong><small>Quiet &amp; deep</small></button>
+            <button class="theme-preview theme-preview-aurora" data-theme="aurora"><span>◒</span><strong>Luces del norte</strong><small>Dream &amp; flow</small></button>
+            <button class="theme-preview theme-preview-cloud" data-theme="cloud"><span>☁</span><strong>Entre nubes</strong><small>Soft &amp; slow</small></button>
+            <button class="theme-preview theme-preview-purple" data-theme="purple"><span>✦</span><strong>Violeta cósmico</strong><small>Calm &amp; creative</small></button>
+            <button class="theme-preview theme-preview-fuchsia" data-theme="fuchsia"><span>✧</span><strong>Fucsia eléctrico</strong><small>Bold &amp; alive</small></button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="player-bar" aria-label="Reproductor móvil y controles de reproducción">
+      <div class="now-playing">
+        <div class="now-cover" id="nowCover"><span>☼</span></div>
+        <div class="now-copy"><strong id="nowTitle">Pon música q me aburro</strong><span id="nowArtist">eres un irreverente y un deslenguado</span></div>
+        <button class="heart-button" id="favoriteBtn" aria-label="Añadir a favoritos">♡</button>
+      </div>
+      <div class="player-center">
+        <div class="player-controls"><button class="player-control subtle" id="shuffleBtn" aria-label="Orden aleatorio">⌘</button><button class="player-control" id="previousBtn" aria-label="Canción anterior">◀◀</button><button class="play-button" id="playBtn" aria-label="Reproducir">▶</button><button class="player-control" id="nextBtn" aria-label="Canción siguiente">▶▶</button><button class="player-control subtle" id="repeatBtn" aria-label="Repetir">↻</button></div>
+        <div class="progress-row"><span id="currentTime">0:00</span><input class="progress-range" id="progressRange" type="range" min="0" max="100" value="0" aria-label="Progreso de la canción" /><span id="totalTime">0:00</span></div>
+      </div>
+      <div class="player-tools"><button class="player-tool" id="queueBtn" aria-label="Cola de reproducción">☷</button><span class="volume-icon">⌁</span><input class="volume-range" id="volumeRange" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volumen" /></div>
+    </footer>
+
+    <div class="theme-drawer" id="themeDrawer" aria-hidden="true">
+      <div class="drawer-backdrop" id="drawerBackdrop"></div>
+      <aside class="drawer-panel" aria-label="Personalizar cielo">
+        <div class="drawer-heading"><div><p class="eyebrow">Tu espacio</p><h2>Personaliza tu cielo</h2></div><button class="close-button" id="closeThemeBtn" aria-label="Cerrar">×</button></div>
+        <p class="drawer-intro">Combina colores y atmósferas para crear un reproductor que se sienta como tuyo.</p>
+        <div class="drawer-section"><div class="drawer-section-title"><span>Temas</span><small id="activeThemeLabel">Cielo despejado</small></div><div class="theme-options" id="themeOptions"><button class="theme-option active" data-theme="clear"><span class="option-swatch clear-swatch"></span><span>Despejado</span></button><button class="theme-option" data-theme="sunset"><span class="option-swatch sunset-swatch"></span><span>Amanecer</span></button><button class="theme-option" data-theme="night"><span class="option-swatch night-swatch"></span><span>Noche</span></button><button class="theme-option" data-theme="aurora"><span class="option-swatch aurora-swatch"></span><span>Aurora</span></button><button class="theme-option" data-theme="cloud"><span class="option-swatch cloud-swatch"></span><span>Nublado</span></button><button class="theme-option" data-theme="purple"><span class="option-swatch purple-swatch"></span><span>Violeta</span></button><button class="theme-option" data-theme="fuchsia"><span class="option-swatch fuchsia-swatch"></span><span>Fucsia</span></button><button class="theme-option realtime-option" data-theme="realtime"><span class="option-swatch realtime-swatch"></span><span>Tiempo real</span></button></div></div>
+        <div class="drawer-section"><div class="drawer-section-title"><span>Detalles</span><small>Personaliza los acentos</small></div><label class="color-control"><span>Color de acento</span><span class="color-input-wrap"><input type="color" id="accentColor" value="#e3ad4b" /><span id="accentHex">#E3AD4B</span></span></label><label class="toggle-control"><span><strong>Fondo animado</strong><small>Nubes flotando suavemente</small></span><input type="checkbox" id="animatedSky" checked /><i></i></label><label class="toggle-control"><span><strong>Reducir movimiento</strong><small>Para una experiencia más tranquila</small></span><input type="checkbox" id="reducedMotion" /><i></i></label></div>
+        <div class="drawer-section custom-theme-section"><div class="drawer-section-title"><span>Crear tema</span><small>Tu propia atmósfera</small></div><label class="custom-theme-field"><span>Nombre del tema</span><input id="customThemeName" type="text" maxlength="28" placeholder="Mi cielo" /></label><div class="custom-theme-colors"><label class="custom-theme-field"><span>Fondo</span><input id="customThemeSky" type="color" value="#e6f5ff" /></label><label class="custom-theme-field"><span>Paneles</span><input id="customThemeSurface" type="color" value="#ffffff" /></label><label class="custom-theme-field"><span>Acento</span><input id="customThemeAccent" type="color" value="#e3ad4b" /></label></div><label class="custom-theme-field"><span>Imagen de fondo</span><input id="customThemeImage" type="file" accept="image/png,image/jpeg,image/webp" /></label><small id="customThemeImageName" class="custom-theme-help">Opcional · máximo 2 MB</small><button class="secondary-theme-button" type="button" id="saveCustomThemeBtn">Guardar tema personalizado</button><div class="custom-theme-list" id="customThemeList" aria-live="polite"></div></div>
+        <div class="drawer-preview"><span class="preview-label">Vista previa</span><div class="mini-preview"><div class="mini-sun"></div><div class="mini-card"><span>✦</span><div><b>Tu música, tu cielo</b><small>Así se verá tu espacio</small></div></div></div></div>
+        <button class="primary-button drawer-done" id="doneThemeBtn">Guardar mi cielo</button>
+      </aside>
+    </div>
+
+    <video id="audioElement" class="media-element" playsinline preload="metadata"></video>
+    <div class="toast" id="toast" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

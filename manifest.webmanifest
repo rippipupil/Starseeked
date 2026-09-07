@@ -1,0 +1,15 @@
+{
+  "name": "starseeked",
+  "short_name": "starseeked",
+  "description": "Tu reproductor de música personalizable inspirado en el cielo.",
+  "lang": "es",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#e6f5ff",
+  "theme_color": "#dff3ff",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
