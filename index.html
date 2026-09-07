@@ -164,7 +164,8 @@
           <label class="custom-theme-field"><span>Título</span><input id="editTrackName" type="text" maxlength="80" required /></label>
           <label class="custom-theme-field"><span>Artista</span><input id="editTrackArtist" type="text" maxlength="80" required /></label>
           <label class="custom-theme-field"><span>Álbum</span><input id="editTrackAlbum" type="text" maxlength="80" required /></label>
-          <div class="modal-actions"><button type="button" class="secondary-theme-button" data-close-modal="editTrackModal">Cancelar</button><button type="submit" class="primary-button">Guardar cambios</button></div>
+          <label class="custom-theme-field cover-field"><span>Portada</span><span><input id="editTrackCover" type="file" accept="image/png,image/jpeg,image/webp" /><small id="editTrackCoverName" class="custom-theme-help">Opcional · máximo 2 MB</small></span></label>
+          <div class="modal-actions"><button type="button" class="secondary-theme-button" id="removeTrackCoverBtn">Quitar portada</button><button type="button" class="secondary-theme-button" data-close-modal="editTrackModal">Cancelar</button><button type="submit" class="primary-button">Guardar cambios</button></div>
         </form>
       </section>
     </div>

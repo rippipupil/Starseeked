@@ -1,0 +1,8 @@
+work/
+.codex/
+.agents/
+node_modules/
+android/
+*.log
+Thumbs.db
+.DS_Store

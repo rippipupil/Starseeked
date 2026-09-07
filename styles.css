@@ -181,6 +181,12 @@ body.reduced-motion * { animation-duration: .01ms !important; animation-iteratio
 .track-action:hover { background: var(--accent-soft); color: var(--accent-deep); }
 .track-menu { width: 28px; height: 28px; margin: 0; }
 .track-row .heart-button.liked { color: var(--accent-deep); }
+.cover-field { align-items: start !important; }
+.cover-field > span:last-child { display: grid; gap: 5px; }
+.cover-field input[type="file"] { width: 100%; color: var(--ink-soft); font-size: 10px; }
+.track-cover.has-cover { background-repeat: no-repeat; }
+.track-action[data-action="delete"] { color: color-mix(in srgb, #c95d6c 72%, var(--ink-soft)); }
+.track-action[data-action="delete"]:hover { background: #ffe0e5; color: #a73e4d; }
 .playlist-item { justify-content: flex-start; }
 .playlist-item small { margin-left: auto; color: var(--ink-soft); font-size: 10px; opacity: .7; }
 .playlist-picker-list { display: grid; gap: 7px; margin: 8px 0 16px; }

@@ -121,7 +121,7 @@ function updateMediaSession() {
     title: track.title,
     artist: track.artist,
     album: track.album,
-    artwork: [{ src: 'icon.svg', sizes: '512x512', type: 'image/svg+xml' }]
+    artwork: [{ src: track.coverData || 'icon.svg', sizes: '512x512', type: track.coverData ? 'image/*' : 'image/svg+xml' }]
   });
 }
 
@@ -175,6 +175,30 @@ function gradientFor(index) {
     'linear-gradient(145deg, #afcfe0, #708fa4)'
   ];
   return gradients[index % gradients.length];
+}
+
+function coverMarkup(track, icon = '♪') {
+  const style = track.coverData
+    ? `background-image:url("${track.coverData}");background-size:cover;background-position:center;background-color:${track.gradient}`
+    : `background:${track.gradient}`;
+  return `<span class="track-cover${track.coverData ? ' has-cover' : ''}" style="${escapeHtml(style)}">${track.coverData ? '' : icon}</span>`;
+}
+
+function applyCover(element, track, icon = '♫') {
+  if (!element) return;
+  if (track?.coverData) {
+    element.style.background = track.gradient;
+    element.style.backgroundImage = `url("${track.coverData}")`;
+    element.style.backgroundSize = 'cover';
+    element.style.backgroundPosition = 'center';
+    element.innerHTML = '';
+  } else {
+    element.style.backgroundImage = '';
+    element.style.backgroundSize = '';
+    element.style.backgroundPosition = '';
+    element.style.background = track?.gradient || '';
+    element.innerHTML = `<span>${icon}</span>`;
+  }
 }
 
 function renderPlaylists() {
@@ -254,7 +278,7 @@ function renderTracks() {
     row.innerHTML = `
       <span class="track-number">${String(visibleIndex + 1).padStart(2, '0')}</span>
       <button class="track-info" data-action="play" data-index="${actualIndex}" aria-label="Reproducir ${track.title}">
-        <span class="track-cover" style="background:${track.gradient}">${actualIndex === currentIndex && !audio.paused ? '♫' : '♪'}</span>
+        ${coverMarkup(track, actualIndex === currentIndex && !audio.paused ? '♫' : '♪')}
         <span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span>
       </button>
       <span class="track-album">${escapeHtml(track.album)}</span>
@@ -263,6 +287,7 @@ function renderTracks() {
         <button class="track-action" data-action="queue" data-index="${actualIndex}" aria-label="Añadir ${track.title} a la cola">＋</button>
         <button class="track-action" data-action="playlist" data-index="${actualIndex}" aria-label="Añadir ${track.title} a una lista">☷</button>
         <button class="track-action" data-action="edit" data-index="${actualIndex}" aria-label="Editar ${track.title}">✎</button>
+        <button class="track-action" data-action="delete" data-index="${actualIndex}" aria-label="Borrar ${track.title}">🗑</button>
         <button class="track-menu heart-button${track.favorite ? ' liked' : ''}" data-action="favorite" data-index="${actualIndex}" aria-label="Añadir ${track.title} a favoritos">${track.favorite ? '♥' : '♡'}</button>
       </span>`;
     trackRows.appendChild(row);
@@ -298,6 +323,15 @@ function saveTrackToLibrary(track) {
   }));
 }
 
+function deleteTrackFromLibrary(trackId) {
+  return openLibraryDb().then((db) => new Promise((resolve, reject) => {
+    const transaction = db.transaction('tracks', 'readwrite');
+    transaction.objectStore('tracks').delete(trackId);
+    transaction.addEventListener('complete', resolve);
+    transaction.addEventListener('error', () => reject(transaction.error));
+  }));
+}
+
 function persistTrackState(track) {
   if (track) saveTrackToLibrary(track).catch(() => {});
 }
@@ -328,8 +362,7 @@ function selectTrack(index, autoplay = true) {
   audio.src = track.url;
   $('#nowTitle').textContent = track.title;
   $('#nowArtist').textContent = track.artist;
-  $('#nowCover').style.background = track.gradient;
-  $('#nowCover').innerHTML = '<span>♫</span>';
+  applyCover($('#nowCover'), track);
   $('#favoriteBtn').classList.toggle('liked', track.favorite);
   updateMediaSession();
   if (autoplay) audio.play().catch(() => showToast('Pulsa reproducir para comenzar la canción.'));
@@ -442,7 +475,7 @@ function renderQueue() {
     const trackIndex = tracks.indexOf(track);
     const isCurrent = trackIndex === currentIndex;
     return `<div class="queue-item${isCurrent ? ' active' : ''}">
-      <button class="queue-item-play" data-queue-action="play" data-queue-index="${queueIndex}" aria-label="Reproducir ${escapeHtml(track.title)}"><span class="track-cover" style="background:${track.gradient}">${isCurrent && !audio.paused ? '♫' : '♪'}</span><span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span></button>
+      <button class="queue-item-play" data-queue-action="play" data-queue-index="${queueIndex}" aria-label="Reproducir ${escapeHtml(track.title)}">${coverMarkup(track, isCurrent && !audio.paused ? '♫' : '♪')}<span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span></button>
       <span class="queue-item-actions"><button data-queue-action="up" data-queue-index="${queueIndex}" aria-label="Subir canción">↑</button><button data-queue-action="down" data-queue-index="${queueIndex}" aria-label="Bajar canción">↓</button><button data-queue-action="remove" data-queue-index="${queueIndex}" aria-label="Quitar canción">×</button></span>
     </div>`;
   }).join('');
@@ -456,15 +489,61 @@ function editTrack(index) {
   $('#editTrackName').value = track.title;
   $('#editTrackArtist').value = track.artist;
   $('#editTrackAlbum').value = track.album;
+  $('#editTrackCover').value = '';
+  $('#editTrackCoverName').textContent = track.coverData ? 'Portada actual · elige otra para sustituirla' : 'Opcional · máximo 2 MB';
   openModal('editTrackModal');
   window.setTimeout(() => $('#editTrackName').focus(), 80);
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => resolve(reader.result));
+    reader.addEventListener('error', () => reject(reader.error));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function deleteTrack(index) {
+  const track = tracks[index];
+  if (!track || !window.confirm(`¿Borrar “${track.title}” de la biblioteca?`)) return;
+  try {
+    await deleteTrackFromLibrary(track.id);
+  } catch {
+    showToast('No se pudo borrar la canción de la biblioteca.');
+    return;
+  }
+  const wasCurrent = currentIndex === index;
+  if (wasCurrent) {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    currentIndex = -1;
+    $('#nowTitle').textContent = 'Pon música q me aburro';
+    $('#nowArtist').textContent = 'eres un irreverente y un deslenguado';
+    $('#totalTime').textContent = '0:00';
+    $('#currentTime').textContent = '0:00';
+    $('#progressRange').value = 0;
+    $('#favoriteBtn').classList.remove('liked');
+    applyCover($('#nowCover'), null, '☼');
+  } else if (currentIndex > index) {
+    currentIndex -= 1;
+  }
+  URL.revokeObjectURL(track.url);
+  tracks.splice(index, 1);
+  queueIds = queueIds.filter((id) => id !== track.id);
+  playlists.forEach((playlist) => { playlist.trackIds = (playlist.trackIds || []).filter((id) => id !== track.id); });
+  saveQueue();
+  savePlaylists();
+  renderTracks();
+  showToast(`“${track.title}” borrada de tu biblioteca.`);
 }
 
 async function importFiles(files) {
   const selectedFiles = [...files];
   const importedTracks = [];
   for (const [index, file] of selectedFiles.entries()) {
-    const track = { id: `${file.name}-${file.lastModified}`, title: getTitle(file.name), artist: 'Tu biblioteca local', album: 'Archivos importados', blob: file, url: URL.createObjectURL(file), duration: 0, favorite: false, playedAt: 0, gradient: gradientFor(tracks.length + index), createdAt: Date.now() + index };
+    const track = { id: `${file.name}-${file.lastModified}`, title: getTitle(file.name), artist: 'Tu biblioteca local', album: 'Archivos importados', blob: file, url: URL.createObjectURL(file), duration: 0, favorite: false, playedAt: 0, gradient: gradientFor(tracks.length + index), coverData: '', createdAt: Date.now() + index };
     try {
       await saveTrackToLibrary(track);
       tracks.push(track);
@@ -509,12 +588,38 @@ trackRows.addEventListener('click', (event) => {
   if (target.dataset.action === 'queue') addTrackToQueue(index);
   if (target.dataset.action === 'playlist') openPlaylistPicker(index);
   if (target.dataset.action === 'edit') editTrack(index);
+  if (target.dataset.action === 'delete') deleteTrack(index);
 });
 
-$('#editTrackForm').addEventListener('submit', (event) => {
+$('#editTrackCover').addEventListener('change', (event) => {
+  const file = event.target.files[0];
+  if (file) $('#editTrackCoverName').textContent = `${file.name} · lista para guardar`;
+});
+$('#removeTrackCoverBtn').addEventListener('click', () => {
+  const track = tracks.find((item) => item.id === editingTrackId);
+  if (!track) return;
+  track.coverData = '';
+  $('#editTrackCover').value = '';
+  $('#editTrackCoverName').textContent = 'Sin portada · se usará el degradado del tema';
+  persistTrackState(track);
+  if (currentIndex === tracks.indexOf(track)) applyCover($('#nowCover'), track);
+  renderTracks();
+  showToast('Portada quitada.');
+});
+
+$('#editTrackForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const track = tracks.find((item) => item.id === editingTrackId);
   if (!track) return closeModal('editTrackModal');
+  const coverFile = $('#editTrackCover').files[0];
+  if (coverFile) {
+    if (coverFile.size > 2 * 1024 * 1024) return showToast('La portada no puede superar 2 MB.');
+    try {
+      track.coverData = await readFileAsDataUrl(coverFile);
+    } catch {
+      return showToast('No se pudo leer la portada.');
+    }
+  }
   track.title = $('#editTrackName').value.trim() || 'Canción sin título';
   track.artist = $('#editTrackArtist').value.trim() || 'Tu biblioteca local';
   track.album = $('#editTrackAlbum').value.trim() || 'Archivos importados';
@@ -522,6 +627,7 @@ $('#editTrackForm').addEventListener('submit', (event) => {
   if (currentIndex === tracks.indexOf(track)) {
     $('#nowTitle').textContent = track.title;
     $('#nowArtist').textContent = track.artist;
+    applyCover($('#nowCover'), track);
     updateMediaSession();
   }
   closeModal('editTrackModal');
