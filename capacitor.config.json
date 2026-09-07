@@ -1,7 +1,7 @@
 {
   "appId": "com.starseeked.player",
   "appName": "starseeked",
-  "webDir": "outputs/cieloplay",
+  "webDir": ".",
   "bundledWebRuntime": false,
   "android": {
     "backgroundColor": "#e6f5ff"
