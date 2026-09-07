@@ -34,6 +34,8 @@ let toastTimer;
 let selectedThemeName = 'clear';
 let selectedAccent = null;
 let deferredInstallPrompt = null;
+const libraryDbName = 'starseeked-library';
+let libraryDbPromise;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -165,6 +167,46 @@ function escapeHtml(value) {
   return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 }
 
+function openLibraryDb() {
+  if (libraryDbPromise) return libraryDbPromise;
+  libraryDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(libraryDbName, 1);
+    request.addEventListener('upgradeneeded', () => request.result.createObjectStore('tracks', { keyPath: 'id' }));
+    request.addEventListener('success', () => resolve(request.result));
+    request.addEventListener('error', () => reject(request.error));
+  });
+  return libraryDbPromise;
+}
+
+function saveTrackToLibrary(track) {
+  return openLibraryDb().then((db) => new Promise((resolve, reject) => {
+    const transaction = db.transaction('tracks', 'readwrite');
+    const { url, ...storedTrack } = track;
+    transaction.objectStore('tracks').put(storedTrack);
+    transaction.addEventListener('complete', resolve);
+    transaction.addEventListener('error', () => reject(transaction.error));
+  }));
+}
+
+function persistTrackState(track) {
+  if (track) saveTrackToLibrary(track).catch(() => {});
+}
+
+async function loadStoredTracks() {
+  try {
+    const db = await openLibraryDb();
+    const records = await new Promise((resolve, reject) => {
+      const request = db.transaction('tracks', 'readonly').objectStore('tracks').getAll();
+      request.addEventListener('success', () => resolve(request.result));
+      request.addEventListener('error', () => reject(request.error));
+    });
+    tracks = records.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).map((record) => ({ ...record, url: URL.createObjectURL(record.blob) }));
+    if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+  } catch {
+    showToast('No se pudo abrir la biblioteca interna de starseeked.');
+  }
+}
+
 function selectTrack(index, autoplay = true) {
   if (!tracks[index]) return;
   currentIndex = index;
@@ -266,17 +308,26 @@ function loadTheme(themeName, customAccent) {
 function openDrawer() { $('#themeDrawer').classList.add('open'); $('#themeDrawer').setAttribute('aria-hidden', 'false'); }
 function closeDrawer() { $('#themeDrawer').classList.remove('open'); $('#themeDrawer').setAttribute('aria-hidden', 'true'); }
 
-function importFiles(files) {
-  [...files].forEach((file, index) => {
-    const track = { id: `${file.name}-${file.lastModified}`, title: getTitle(file.name), artist: 'Tu biblioteca local', album: 'Archivos importados', url: URL.createObjectURL(file), duration: 0, favorite: false, playedAt: 0, gradient: gradientFor(tracks.length + index) };
-    tracks.push(track);
+async function importFiles(files) {
+  const selectedFiles = [...files];
+  const importedTracks = [];
+  for (const [index, file] of selectedFiles.entries()) {
+    const track = { id: `${file.name}-${file.lastModified}`, title: getTitle(file.name), artist: 'Tu biblioteca local', album: 'Archivos importados', blob: file, url: URL.createObjectURL(file), duration: 0, favorite: false, playedAt: 0, gradient: gradientFor(tracks.length + index), createdAt: Date.now() + index };
+    try {
+      await saveTrackToLibrary(track);
+      tracks.push(track);
+      importedTracks.push(track);
+    } catch {
+      URL.revokeObjectURL(track.url);
+      showToast('No hay espacio suficiente para guardar esta canción en la app.');
+    }
     const probe = document.createElement('video');
     probe.preload = 'metadata';
     probe.src = track.url;
-    probe.addEventListener('loadedmetadata', () => { track.duration = probe.duration; renderTracks(); });
-  });
+    probe.addEventListener('loadedmetadata', () => { track.duration = probe.duration; saveTrackToLibrary(track).catch(() => {}); renderTracks(); });
+  }
   renderTracks();
-  if (files.length) { showToast(`${files.length} ${files.length === 1 ? 'canción añadida' : 'canciones añadidas'} a tu cielo.`); if (currentIndex < 0) selectTrack(0, false); }
+  if (importedTracks.length) { showToast(`${importedTracks.length} ${importedTracks.length === 1 ? 'canción añadida' : 'canciones añadidas'} a tu biblioteca interna.`); if (currentIndex < 0) selectTrack(tracks.indexOf(importedTracks[0]), false); }
 }
 
 $('#addMusicBtn').addEventListener('click', () => fileInput.click());
@@ -294,14 +345,14 @@ $('#nextBtn').addEventListener('click', playNext);
 $('#previousBtn').addEventListener('click', playPrevious);
 $('#shuffleBtn').addEventListener('click', (event) => { isShuffle = !isShuffle; event.currentTarget.classList.toggle('active', isShuffle); showToast(isShuffle ? 'Orden aleatorio activado.' : 'Orden aleatorio desactivado.'); });
 $('#repeatBtn').addEventListener('click', (event) => { isRepeat = !isRepeat; event.currentTarget.classList.toggle('active', isRepeat); showToast(isRepeat ? 'Repetición activada.' : 'Repetición desactivada.'); });
-$('#favoriteBtn').addEventListener('click', () => { if (currentIndex < 0) return; tracks[currentIndex].favorite = !tracks[currentIndex].favorite; $('#favoriteBtn').classList.toggle('liked', tracks[currentIndex].favorite); showToast(tracks[currentIndex].favorite ? 'Añadida a favoritos.' : 'Quitada de favoritos.'); renderTracks(); });
-trackRows.addEventListener('click', (event) => { const target = event.target.closest('[data-action]'); if (!target) return; const index = Number(target.dataset.index); if (target.dataset.action === 'play') selectTrack(index); if (target.dataset.action === 'favorite') { tracks[index].favorite = !tracks[index].favorite; renderTracks(); } });
+$('#favoriteBtn').addEventListener('click', () => { if (currentIndex < 0) return; tracks[currentIndex].favorite = !tracks[currentIndex].favorite; persistTrackState(tracks[currentIndex]); $('#favoriteBtn').classList.toggle('liked', tracks[currentIndex].favorite); showToast(tracks[currentIndex].favorite ? 'Añadida a favoritos.' : 'Quitada de favoritos.'); renderTracks(); });
+trackRows.addEventListener('click', (event) => { const target = event.target.closest('[data-action]'); if (!target) return; const index = Number(target.dataset.index); if (target.dataset.action === 'play') selectTrack(index); if (target.dataset.action === 'favorite') { tracks[index].favorite = !tracks[index].favorite; persistTrackState(tracks[index]); renderTracks(); } });
 $('#progressRange').addEventListener('input', (event) => { if (audio.duration) audio.currentTime = (event.target.value / 100) * audio.duration; });
 $('#volumeRange').addEventListener('input', (event) => { audio.volume = event.target.value; });
 audio.volume = .8;
 audio.addEventListener('loadedmetadata', () => { $('#totalTime').textContent = formatTime(audio.duration); updateMediaSessionPosition(); });
 audio.addEventListener('timeupdate', () => { const progress = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0; $('#progressRange').value = progress; $('#currentTime').textContent = formatTime(audio.currentTime); updateMediaSessionPosition(); });
-audio.addEventListener('play', () => { if (tracks[currentIndex]) tracks[currentIndex].playedAt = Date.now(); updateMediaSession(); updatePlayButton(); renderTracks(); });
+audio.addEventListener('play', () => { if (tracks[currentIndex]) { tracks[currentIndex].playedAt = Date.now(); persistTrackState(tracks[currentIndex]); } updateMediaSession(); updatePlayButton(); renderTracks(); });
 audio.addEventListener('pause', () => { updatePlayButton(); renderTracks(); });
 audio.addEventListener('ended', () => isRepeat ? (audio.currentTime = 0, audio.play()) : playNext());
 
@@ -397,4 +448,7 @@ setupMediaSession();
 if ('serviceWorker' in navigator && ['http:', 'https:'].includes(location.protocol)) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-renderTracks();
+loadStoredTracks().then(() => {
+  renderTracks();
+  if (tracks.length && currentIndex < 0) selectTrack(0, false);
+});
