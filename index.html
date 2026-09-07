@@ -42,11 +42,7 @@
           <button class="nav-item" data-view="temas"><span class="nav-icon">✦</span>Temas</button>
 
           <p class="nav-label playlist-label">Mis listas <button class="tiny-add" id="newPlaylistBtn" aria-label="Crear lista">+</button></p>
-          <div class="playlist-list" id="playlistList">
-            <button class="nav-item playlist-item"><span class="playlist-dot sunset"></span>Amaneceres</button>
-            <button class="nav-item playlist-item"><span class="playlist-dot night"></span>Noches tranquilas</button>
-            <button class="nav-item playlist-item"><span class="playlist-dot aurora"></span>Para concentrarse</button>
-          </div>
+          <div class="playlist-list" id="playlistList"></div>
         </nav>
 
         <div class="sidebar-bottom">
@@ -113,7 +109,7 @@
             <div class="section-controls"><button class="text-button" id="addMusicBtn">+ Añadir archivos</button><input id="fileInput" type="file" accept="audio/*,video/*" multiple hidden /><button class="round-arrow" id="viewAllBtn" aria-label="Ver todas las canciones">↗</button></div>
           </div>
           <div class="track-table" id="trackTable">
-            <div class="track-table-head"><span>#</span><span>Título</span><span>Álbum</span><span>Duración</span><span></span></div>
+            <div class="track-table-head"><span>#</span><span>Título</span><span>Álbum</span><span>Duración</span><span>Acciones</span></div>
             <div id="trackRows"></div>
             <div class="empty-state" id="emptyState"><div class="empty-cloud">☁</div><h3>Aquí aparecerá tu música</h3><p>MP3, MP4 y otros archivos compatibles</p><button class="primary-button small-button" id="emptyAddBtn">Añadir archivos</button></div>
           </div>
@@ -157,6 +153,39 @@
         <div class="drawer-preview"><span class="preview-label">Vista previa</span><div class="mini-preview"><div class="mini-sun"></div><div class="mini-card"><span>✦</span><div><b>Tu música, tu cielo</b><small>Así se verá tu espacio</small></div></div></div></div>
         <button class="primary-button drawer-done" id="doneThemeBtn">Guardar mi cielo</button>
       </aside>
+    </div>
+
+    <div class="utility-modal" id="editTrackModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="editTrackModal"></div>
+      <section class="utility-panel" role="dialog" aria-modal="true" aria-labelledby="editTrackTitle">
+        <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="editTrackTitle">Editar canción</h2></div><button class="close-button" data-close-modal="editTrackModal" aria-label="Cerrar">×</button></div>
+        <p class="drawer-intro">Cambia cómo aparece esta canción dentro de starseeked.</p>
+        <form id="editTrackForm" class="edit-track-form">
+          <label class="custom-theme-field"><span>Título</span><input id="editTrackName" type="text" maxlength="80" required /></label>
+          <label class="custom-theme-field"><span>Artista</span><input id="editTrackArtist" type="text" maxlength="80" required /></label>
+          <label class="custom-theme-field"><span>Álbum</span><input id="editTrackAlbum" type="text" maxlength="80" required /></label>
+          <div class="modal-actions"><button type="button" class="secondary-theme-button" data-close-modal="editTrackModal">Cancelar</button><button type="submit" class="primary-button">Guardar cambios</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="utility-modal" id="playlistPickerModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="playlistPickerModal"></div>
+      <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="playlistPickerTitle">
+        <div class="drawer-heading"><div><p class="eyebrow">Organiza tu música</p><h2 id="playlistPickerTitle">Añadir a una lista</h2></div><button class="close-button" data-close-modal="playlistPickerModal" aria-label="Cerrar">×</button></div>
+        <div class="playlist-picker-list" id="playlistPickerList"></div>
+        <button type="button" class="secondary-theme-button" id="pickerNewPlaylistBtn">+ Crear una lista nueva</button>
+      </section>
+    </div>
+
+    <div class="utility-modal" id="queueModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="queueModal"></div>
+      <section class="utility-panel queue-panel" role="dialog" aria-modal="true" aria-labelledby="queueTitle">
+        <div class="drawer-heading"><div><p class="eyebrow">Reproducción</p><h2 id="queueTitle">Cola de reproducción</h2></div><button class="close-button" data-close-modal="queueModal" aria-label="Cerrar">×</button></div>
+        <div class="queue-toolbar"><span id="queueCount">0 canciones</span><button class="text-button" id="clearQueueBtn">Vaciar cola</button></div>
+        <div class="queue-list" id="queueList"></div>
+        <p class="queue-empty" id="queueEmpty">Añade canciones desde tu biblioteca para crear una cola.</p>
+      </section>
     </div>
 
     <video id="audioElement" class="media-element" playsinline preload="metadata"></video>
