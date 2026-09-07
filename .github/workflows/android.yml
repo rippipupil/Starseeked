@@ -1,0 +1,49 @@
+name: Generar APK de starseeked
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Compilar APK Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Instalar Capacitor
+        run: npm install
+      - name: Crear proyecto Android
+        run: npx cap add android
+      - name: Copiar la aplicación web al proyecto Android
+        run: npx cap sync android
+      - name: Compilar APK de prueba
+        working-directory: android
+        run: ./gradlew assembleDebug
+      - name: Guardar APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: starseeked-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publicar APK en Releases
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="apk-${{ github.run_number }}"
+          gh release create "$TAG" android/app/build/outputs/apk/debug/app-debug.apk --target "${{ github.sha }}" --title "starseeked Android $TAG" --notes "APK generado automáticamente desde starseeked."
