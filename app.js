@@ -240,7 +240,7 @@ function renderTracks() {
   }
   trackRows.innerHTML = '';
   const activePlaylist = playlists.find((item) => item.id === activePlaylistId);
-  const emptyTitle = activeView === 'favoritos' ? 'Aún no tienes favoritos' : activeView === 'recientes' ? 'Aún no hay historial' : activeView === 'playlist' ? `“${activePlaylist?.name || 'Lista'}” está vacía` : searchTerm ? 'No encontramos esa canción' : 'Aún no hay música en tu cielo';
+  const emptyTitle = activeView === 'favoritos' ? 'Aún no tienes favoritos' : activeView === 'recientes' ? 'Aún no hay historial' : activeView === 'playlist' ? `“${activePlaylist?.name || 'Lista'}” está vacía` : searchTerm ? 'No encontramos esa canción' : 'aun no has subido música';
   const emptyDescription = activeView === 'favoritos' ? 'Pulsa el corazón de una canción para guardarla aquí.' : activeView === 'recientes' ? 'Las canciones que escuches aparecerán en este espacio.' : activeView === 'playlist' ? 'Añade canciones desde el botón + de tu biblioteca.' : searchTerm ? 'Prueba con otro título, artista o álbum.' : 'Sube archivos MP3, MP4 u otros formatos compatibles.';
   $('#emptyState h3').textContent = emptyTitle;
   $('#emptyState p').textContent = emptyDescription;
