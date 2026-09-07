@@ -33,9 +33,25 @@ let activeView = 'inicio';
 let toastTimer;
 let selectedThemeName = 'clear';
 let selectedAccent = null;
+let deferredInstallPrompt = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  const installButton = $('#androidDownloadBtn');
+  if (installButton) {
+    installButton.href = '#';
+    installButton.innerHTML = '<span>↧</span><span>Instalar en Android</span>';
+  }
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  showToast('starseeked se ha instalado en tu móvil.');
+});
 
 function showToast(message) {
   toast.textContent = message;
@@ -290,6 +306,16 @@ audio.addEventListener('pause', () => { updatePlayButton(); renderTracks(); });
 audio.addEventListener('ended', () => isRepeat ? (audio.currentTime = 0, audio.play()) : playNext());
 
 $('#searchInput').addEventListener('input', (event) => { searchTerm = event.target.value; renderTracks(); });
+$('#androidDownloadBtn').addEventListener('click', async (event) => {
+  if (!deferredInstallPrompt) {
+    showToast('La descarga del APK estará disponible desde Releases de GitHub.');
+    return;
+  }
+  event.preventDefault();
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+});
 function changeView(view) {
   if (view === 'temas') {
     openDrawer();

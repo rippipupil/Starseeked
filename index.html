@@ -10,6 +10,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>starseeked — Tu música, tu cielo</title>
     <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
@@ -27,7 +29,7 @@
     <div class="app-shell">
       <aside class="sidebar">
         <a class="brand" href="#top" aria-label="starseeked, inicio">
-          <span class="brand-mark"><span></span><span></span><span></span></span>
+          <span class="brand-mark" aria-hidden="true"><span>✦</span><span>✦</span><span>✧</span></span>
           <span>star<span>seeked</span></span>
         </a>
 
@@ -69,6 +71,7 @@
               <input id="searchInput" type="search" placeholder="Buscar en tu cielo" aria-label="Buscar en tu música" />
               <kbd>/</kbd>
             </label>
+            <a class="android-download-button" id="androidDownloadBtn" href="https://github.com/rippipupil/Starseeked/releases/latest" target="_blank" rel="noopener"><span>↧</span><span>Descargar APK</span></a>
             <button class="icon-button notification-button" aria-label="Notificaciones"><span>♧</span><i></i></button>
             <button class="avatar-button" aria-label="Tu perfil">L</button>
           </div>
