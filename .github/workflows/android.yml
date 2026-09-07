@@ -1,4 +1,4 @@
-name: Generar APK de starseeked
+name: Generar y publicar APK de starseeked
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
       - name: Copiar la aplicación web al proyecto Android
         run: npx cap sync android
 
-      - name: Compilar APK de prueba
+      - name: Compilar APK de Android
         working-directory: android
         run: ./gradlew assembleDebug
 
@@ -51,12 +51,12 @@ jobs:
           name: starseeked-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
 
-      - name: Publicar APK en Releases
-        if: github.event_name == 'workflow_dispatch'
+      - name: Publicar APK descargable en Releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="apk-${{ github.run_number }}"
-          gh release create "$TAG" android/app/build/outputs/apk/debug/app-debug.apk --target "${{ github.sha }}" --title "starseeked Android $TAG" --notes "APK generado automáticamente desde starseeked."
+          cp android/app/build/outputs/apk/debug/app-debug.apk starseeked.apk
+          gh release create "$TAG" starseeked.apk --target "${{ github.sha }}" --title "starseeked Android $TAG" --notes "APK generado automáticamente desde la rama main. Descarga e instala starseeked en Android."
