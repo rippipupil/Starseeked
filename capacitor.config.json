@@ -1,7 +1,7 @@
 {
   "appId": "com.starseeked.player",
   "appName": "starseeked",
-  "webDir": ".",
+  "webDir": "www",
   "bundledWebRuntime": false,
   "android": {
     "backgroundColor": "#e6f5ff"
