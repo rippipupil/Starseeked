@@ -106,7 +106,7 @@
         <section class="content-section" id="librarySection">
           <div class="section-heading">
             <div><p class="eyebrow">Tu selección</p><h2 id="sectionTitle">Escuchadas recientemente</h2></div>
-            <div class="section-controls"><button class="text-button" id="addMusicBtn">+ Añadir archivos</button><input id="fileInput" type="file" accept="audio/*,video/*" multiple hidden /><button class="round-arrow" id="viewAllBtn" aria-label="Ver todas las canciones">↗</button></div>
+            <div class="section-controls"><button class="text-button" id="playlistsBtn">Mis listas</button><button class="text-button" id="addMusicBtn">+ Añadir archivos</button><input id="fileInput" type="file" accept="audio/*,video/*" multiple hidden /><button class="round-arrow" id="viewAllBtn" aria-label="Ver todas las canciones">↗</button></div>
           </div>
           <div class="track-table" id="trackTable">
             <div class="track-table-head"><span>#</span><span>Título</span><span>Álbum</span><span>Duración</span><span>Acciones</span></div>
@@ -175,6 +175,15 @@
         <div class="drawer-heading"><div><p class="eyebrow">Organiza tu música</p><h2 id="playlistPickerTitle">Añadir a una lista</h2></div><button class="close-button" data-close-modal="playlistPickerModal" aria-label="Cerrar">×</button></div>
         <div class="playlist-picker-list" id="playlistPickerList"></div>
         <button type="button" class="secondary-theme-button" id="pickerNewPlaylistBtn">+ Crear una lista nueva</button>
+      </section>
+    </div>
+
+    <div class="utility-modal" id="playlistManagerModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="playlistManagerModal"></div>
+      <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="playlistManagerTitle">
+        <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="playlistManagerTitle">Mis listas</h2></div><button class="close-button" data-close-modal="playlistManagerModal" aria-label="Cerrar">×</button></div>
+        <div class="playlist-picker-list" id="playlistManagerList"></div>
+        <button type="button" class="secondary-theme-button" id="managerNewPlaylistBtn">+ Crear una lista nueva</button>
       </section>
     </div>
 

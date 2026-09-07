@@ -182,6 +182,14 @@ function renderPlaylists() {
   if (!list) return;
   list.innerHTML = playlists.map((playlist) => `<button class="nav-item playlist-item${activePlaylistId === playlist.id ? ' active' : ''}" data-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0}</small></button>`).join('');
   list.querySelectorAll('[data-playlist-id]').forEach((button) => button.addEventListener('click', () => changeView('playlist', button.dataset.playlistId)));
+  renderPlaylistManager();
+}
+
+function renderPlaylistManager() {
+  const list = $('#playlistManagerList');
+  if (!list) return;
+  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-manager-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>›</b></button>`).join('');
+  list.querySelectorAll('[data-manager-playlist-id]').forEach((button) => button.addEventListener('click', () => { closeModal('playlistManagerModal'); changeView('playlist', button.dataset.managerPlaylistId); }));
 }
 
 function addTrackToQueue(index, shouldNotify = true) {
@@ -609,16 +617,20 @@ $('#saveCustomThemeBtn').addEventListener('click', () => {
 });
 $('#animatedSky').addEventListener('change', (event) => { document.body.classList.toggle('reduced-motion', !event.target.checked); localStorage.setItem('cieloplay-animated', event.target.checked); });
 $('#reducedMotion').addEventListener('change', (event) => { document.body.classList.toggle('reduced-motion', event.target.checked); localStorage.setItem('cieloplay-reduced', event.target.checked); });
-$('#newPlaylistBtn').addEventListener('click', () => {
+function createPlaylistFromPrompt() {
   const name = window.prompt('Nombre de tu nueva lista:');
-  if (!name?.trim()) return;
+  if (!name?.trim()) return null;
   const cleanName = name.trim();
   const playlist = { id: `playlist-${Date.now()}`, name: cleanName, color: 'aurora', trackIds: [] };
   playlists.push(playlist);
   savePlaylists();
   renderPlaylists();
   showToast(`Lista “${cleanName}” creada.`);
-});
+  return playlist;
+}
+
+$('#newPlaylistBtn').addEventListener('click', createPlaylistFromPrompt);
+$('#playlistsBtn').addEventListener('click', () => { renderPlaylistManager(); openModal('playlistManagerModal'); });
 $('#viewAllBtn').addEventListener('click', () => changeView('biblioteca'));
 $('#queueBtn').addEventListener('click', () => { renderQueue(); openModal('queueModal'); });
 $('#clearQueueBtn').addEventListener('click', () => {
@@ -653,14 +665,10 @@ $('#queueList').addEventListener('click', (event) => {
   }
 });
 $('#pickerNewPlaylistBtn').addEventListener('click', () => {
-  const name = window.prompt('Nombre de tu nueva lista:');
-  if (!name?.trim()) return;
-  const playlist = { id: `playlist-${Date.now()}`, name: name.trim(), color: 'aurora', trackIds: [] };
-  playlists.push(playlist);
-  savePlaylists();
-  renderPlaylists();
-  openPlaylistPicker(pickerTrackIndex);
+  const playlist = createPlaylistFromPrompt();
+  if (playlist) openPlaylistPicker(pickerTrackIndex);
 });
+$('#managerNewPlaylistBtn').addEventListener('click', () => { createPlaylistFromPrompt(); renderPlaylistManager(); });
 
 const savedTheme = JSON.parse(localStorage.getItem('cieloplay-theme') || 'null');
 loadTheme(savedTheme?.name || 'clear', savedTheme?.accent || undefined);
