@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#dff3ff" />
+    <meta name="theme-color" content="#dff2ff" />
     <meta name="description" content="starseeked, un reproductor de música personalizable inspirado en el cielo." />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -14,151 +14,208 @@
     <link rel="apple-touch-icon" href="icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Pixelify+Sans:wght@500;600;700&family=VT323&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns:xlink="http://www.w3.org/1999/xlink">
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9a1 1 0 0 0 1 1h4v-6h2v6h4a1 1 0 0 0 1-1v-9" /></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.6" /><rect x="13" y="4" width="7" height="7" rx="1.6" /><rect x="4" y="13" width="7" height="7" rx="1.6" /><rect x="13" y="13" width="7" height="7" rx="1.6" /></symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.2s-7.6-4.6-9.9-9.4C.6 7.2 2.4 4 5.9 4c2 0 3.6 1.1 4.5 2.8C11.3 5.7 12.5 4 14.6 4c3.5 0 5.3 3.2 3.8 6.8-2.3 4.8-9.9 9.4-9.9 9.4Z" /></symbol>
+      <symbol id="i-heart-filled" viewBox="0 0 24 24"><path d="M12 20.2s-7.6-4.6-9.9-9.4C.6 7.2 2.4 4 5.9 4c2 0 3.6 1.1 4.5 2.8C11.3 5.7 12.5 4 14.6 4c3.5 0 5.3 3.2 3.8 6.8-2.3 4.8-9.9 9.4-9.9 9.4Z" /></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2" /><path d="M12 7.6V12l3.2 2" /></symbol>
+      <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3c.5 3.3 1.7 5 5 5.6-3.3.6-4.5 2.3-5 5.6-.5-3.3-1.7-5-5-5.6 3.3-.6 4.5-2.3 5-5.6Z" /><path d="M19 14.5c.3 1.6.9 2.4 2.5 2.7-1.6.3-2.2 1.1-2.5 2.7-.3-1.6-.9-2.4-2.5-2.7 1.6-.3 2.2-1.1 2.5-2.7Z" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m20 20-4.6-4.6" /></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11.5" /><path d="m7.5 11 4.5 4.5L16.5 11" /><path d="M5 19.5h14" /></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 10.5a6 6 0 0 1 12 0c0 4 1.4 5.4 1.4 5.4H4.6S6 14.5 6 10.5Z" /><path d="M10 19a2.1 2.1 0 0 0 4 0" /></symbol>
+      <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7" /><path d="M8.5 7H17v8.5" /></symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9.5 5.5 7 6.5-7 6.5" /></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.5 18a4.3 4.3 0 0 1-.6-8.6 5.6 5.6 0 0 1 10.8-1.6A4.2 4.2 0 0 1 17 18Z" /></symbol>
+      <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3.5 7h3.3c1.6 0 3 .9 3.8 2.3" /><path d="M3.5 17h3.3c1.6 0 3-.9 3.8-2.3" /><path d="M14.8 7h5.7" /><path d="M14.8 17h5.7" /><path d="m17.5 4.3 2.9 2.7-2.9 2.7" /><path d="m17.5 20.3-2.9-2.7 2.9-2.7" fill="none" /><path d="m11 14 2 3" /></symbol>
+      <symbol id="i-skip-back" viewBox="0 0 24 24"><path d="M6 6v12" /><path d="M18 7 8.5 12l9.5 5Z" /></symbol>
+      <symbol id="i-skip-forward" viewBox="0 0 24 24"><path d="M18 6v12" /><path d="M6 7 15.5 12 6 17Z" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5Z" /></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><rect x="7" y="5.5" width="4" height="13" rx="1" /><rect x="14" y="5.5" width="4" height="13" rx="1" /></symbol>
+      <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M6 7h9a3.5 3.5 0 0 1 3.5 3.5V12" /><path d="m6.5 4.5-3 2.5 3 2.5" /><path d="M18 17H9a3.5 3.5 0 0 1-3.5-3.5V12" /><path d="m17.5 14.5 3 2.5-3 2.5" /></symbol>
+      <symbol id="i-queue" viewBox="0 0 24 24"><path d="M4 6h13" /><path d="M4 12h13" /><path d="M4 18h9" /><path d="M18.5 14v6" /><path d="M15.5 17h6" /></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 10v4h3.5L13 18V6L7.5 10Z" /><path d="M16.3 9a5 5 0 0 1 0 6" /><path d="M18.8 6.5a8.6 8.6 0 0 1 0 11" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13" /><path d="M5.5 12h13" /></symbol>
+      <symbol id="i-list-plus" viewBox="0 0 24 24"><path d="M4 6.5h11" /><path d="M4 12h11" /><path d="M4 17.5h6" /><path d="M18 10v7" /><path d="M14.5 13.5h7" /></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M5 19.5 5.7 16 16 5.7a1.8 1.8 0 0 1 2.5 0l.8.8a1.8 1.8 0 0 1 0 2.5L9 19.3Z" /><path d="m14 7.7 2.6 2.6" /></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7.5h14" /><path d="M9.5 7.5V5.8a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3V7.5" /><path d="M7.3 7.5 8 19a1.6 1.6 0 0 0 1.6 1.5h4.8A1.6 1.6 0 0 0 16 19l.7-11.5" /><path d="M10.3 11v6" /><path d="M13.7 11v6" /></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12" /><path d="m18 6-12 12" /></symbol>
+      <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 18.5v-13" /><path d="m6.5 10.5 5.5-5.5 5.5 5.5" /></symbol>
+      <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5.5v13" /><path d="m17.5 13.5-5.5 5.5-5.5-5.5" /></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="6" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="12" cy="18" r="1.4" /></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.8" r="3.4" /><path d="M5 19.4a7 7 0 0 1 14 0" /></symbol>
+      <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 17.5V6.2l9-2v10.8" /><circle cx="7" cy="17.5" r="2.5" /><circle cx="16" cy="15" r="2.5" /></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.4" /><path d="M12 3v2.3M12 18.7V21M4.4 12H2M22 12h-2.4M5.7 5.7l1.6 1.6M16.7 16.7l1.6 1.6M18.3 5.7l-1.6 1.6M7.3 16.7l-1.6 1.6" /></symbol>
+    </svg>
+
     <div class="sky-backdrop" aria-hidden="true">
       <div class="sun-glow"></div>
+      <div class="star-field"></div>
       <div class="cloud cloud-one"></div>
       <div class="cloud cloud-two"></div>
       <div class="cloud cloud-three"></div>
+      <div class="sky-bubbles"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       <div class="grain"></div>
+      <div class="scanlines"></div>
     </div>
 
-    <div class="app-shell">
-      <aside class="sidebar">
-        <a class="brand" href="#top" aria-label="starseeked, inicio">
-          <span class="brand-mark" aria-hidden="true"><span>✦</span><span>✦</span><span>✧</span></span>
-          <span>star<span>seeked</span></span>
-        </a>
+    <header class="app-header">
+      <a class="brand" href="#top" aria-label="starseeked, inicio">
+        <span class="brand-mark" aria-hidden="true"><span>✦</span><span>✦</span><span>✧</span></span>
+        <span>star<span>seeked</span></span>
+      </a>
 
-        <nav class="main-nav" aria-label="Navegación principal">
-          <p class="nav-label">Explorar</p>
-          <button class="nav-item active" data-view="inicio"><span class="nav-icon">⌂</span>Inicio</button>
-          <button class="nav-item" data-view="biblioteca"><span class="nav-icon">▣</span>Mi biblioteca</button>
-          <button class="nav-item" data-view="favoritos"><span class="nav-icon">♡</span>Favoritos</button>
-          <button class="nav-item" data-view="recientes"><span class="nav-icon">◷</span>Recientes</button>
-          <button class="nav-item" data-view="temas"><span class="nav-icon">✦</span>Temas</button>
+      <nav class="primary-nav" aria-label="Navegación principal">
+        <button class="nav-item active" data-view="inicio"><svg class="icon"><use href="#i-home" xlink:href="#i-home" /></svg><span>Inicio</span></button>
+        <button class="nav-item" data-view="biblioteca"><svg class="icon"><use href="#i-grid" xlink:href="#i-grid" /></svg><span>Mi biblioteca</span></button>
+        <button class="nav-item" data-view="favoritos"><svg class="icon"><use href="#i-heart" xlink:href="#i-heart" /></svg><span>Favoritos</span></button>
+        <button class="nav-item" data-view="recientes"><svg class="icon"><use href="#i-clock" xlink:href="#i-clock" /></svg><span>Recientes</span></button>
+        <button class="nav-item" data-view="temas"><svg class="icon icon-solid"><use href="#i-sparkle" xlink:href="#i-sparkle" /></svg><span>Temas</span></button>
+      </nav>
 
-          <p class="nav-label playlist-label">Mis listas <button class="tiny-add" id="newPlaylistBtn" aria-label="Crear lista">+</button></p>
-          <div class="playlist-list" id="playlistList"></div>
-        </nav>
+      <div class="header-actions">
+        <label class="search-box">
+          <svg class="icon" aria-hidden="true"><use href="#i-search" xlink:href="#i-search" /></svg>
+          <input id="searchInput" type="search" placeholder="Buscar en tu cielo" aria-label="Buscar en tu música" />
+          <kbd>/</kbd>
+        </label>
+        <a class="android-download-button" id="androidDownloadBtn" href="https://github.com/rippipupil/Starseeked/releases/latest" target="_blank" rel="noopener"><svg class="icon"><use href="#i-download" xlink:href="#i-download" /></svg><span>Descargar APK</span></a>
+        <button class="icon-button notification-button" aria-label="Notificaciones"><svg class="icon"><use href="#i-bell" xlink:href="#i-bell" /></svg><i></i></button>
+        <button class="avatar-button" aria-label="Tu perfil">L</button>
+      </div>
 
-        <div class="sidebar-bottom">
-          <div class="storage-card">
-            <div class="storage-top"><span class="storage-icon">☁</span><span id="trackCountLabel">0 canciones</span></div>
-            <p>Tu música vive aquí</p>
-            <div class="storage-bar"><span></span></div>
+      <!-- Se mantienen ocultos por compatibilidad: app.js los usa sin comprobación nula, pero la gestión de listas vive ahora en el modal "Mis listas". -->
+      <button class="visually-hidden" id="newPlaylistBtn" tabindex="-1" aria-hidden="true">Crear lista</button>
+      <div class="visually-hidden" id="playlistList" aria-hidden="true"></div>
+    </header>
+
+    <nav class="tab-bar" aria-label="Navegación móvil">
+      <button class="nav-item active" data-view="inicio"><svg class="icon"><use href="#i-home" xlink:href="#i-home" /></svg><span>Inicio</span></button>
+      <button class="nav-item" data-view="biblioteca"><svg class="icon"><use href="#i-grid" xlink:href="#i-grid" /></svg><span>Biblioteca</span></button>
+      <button class="nav-item" data-view="favoritos"><svg class="icon"><use href="#i-heart" xlink:href="#i-heart" /></svg><span>Favoritos</span></button>
+      <button class="nav-item" data-view="recientes"><svg class="icon"><use href="#i-clock" xlink:href="#i-clock" /></svg><span>Recientes</span></button>
+      <button class="nav-item" data-view="temas"><svg class="icon icon-solid"><use href="#i-sparkle" xlink:href="#i-sparkle" /></svg><span>Temas</span></button>
+    </nav>
+
+    <main class="main-content" id="top">
+      <div class="greeting-row">
+        <p class="eyebrow">hey :]</p>
+        <div class="sky-status">
+          <span class="sky-status-icon"><svg class="icon"><use href="#i-cloud" xlink:href="#i-cloud" /></svg></span>
+          <div class="sky-status-text">
+            <strong id="trackCountLabel">0 canciones</strong>
+            <span class="storage-bar"><span></span></span>
           </div>
-          <button class="customize-button" id="openThemeBtn"><span>✦</span> Personalizar cielo</button>
-          <p class="sidebar-note">Hecho para escuchar el momento.</p>
+          <button class="customize-button" id="openThemeBtn"><svg class="icon icon-solid"><use href="#i-sparkle" xlink:href="#i-sparkle" /></svg>Personalizar cielo</button>
         </div>
-      </aside>
+      </div>
 
-      <main class="main-content" id="top">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">hey :]</p>
+      <section class="hero-grid" aria-label="Recomendación del día">
+        <article class="hero-card">
+          <div class="hero-copy">
+            <span class="pill"><svg class="icon icon-solid"><use href="#i-sparkle" xlink:href="#i-sparkle" /></svg> Tu cielo de hoy</span>
+            <h2>Recuerda beber agua retra</h2>
+            <p>relájate y escucha algo</p>
+            <button class="primary-button" id="heroPlayBtn"><svg class="icon"><use href="#i-play" xlink:href="#i-play" /></svg> Escuchar ahora</button>
           </div>
-          <div class="top-actions">
-            <label class="search-box">
-              <span aria-hidden="true">⌕</span>
-              <input id="searchInput" type="search" placeholder="Buscar en tu cielo" aria-label="Buscar en tu música" />
-              <kbd>/</kbd>
-            </label>
-            <a class="android-download-button" id="androidDownloadBtn" href="https://github.com/rippipupil/Starseeked/releases/latest" target="_blank" rel="noopener"><span>↧</span><span>Descargar APK</span></a>
-            <button class="icon-button notification-button" aria-label="Notificaciones"><span>♧</span><i></i></button>
-            <button class="avatar-button" aria-label="Tu perfil">L</button>
+          <div class="hero-art" aria-hidden="true">
+            <div class="hero-sun"></div>
+            <div class="hero-horizon"></div>
+            <div class="hero-mountain mountain-back"></div>
+            <div class="hero-mountain mountain-front"></div>
+            <div class="hero-cloud cloud-art-one"></div>
+            <div class="hero-cloud cloud-art-two"></div>
+            <span class="hero-star star-one">✦</span><span class="hero-star star-two">·</span>
           </div>
-        </header>
+        </article>
 
-        <section class="hero-grid" aria-label="Recomendación del día">
-          <article class="hero-card">
-            <div class="hero-copy">
-              <span class="pill"><span class="spark">✦</span> Tu cielo de hoy</span>
-              <h2>Recuerda beber agua retra</h2>
-              <p>relajate y escucha algo</p>
-              <button class="primary-button" id="heroPlayBtn"><span>▶</span> Escuchar ahora</button>
-            </div>
-            <div class="hero-art" aria-hidden="true">
-              <div class="hero-sun"></div>
-              <div class="hero-horizon"></div>
-              <div class="hero-mountain mountain-back"></div>
-              <div class="hero-mountain mountain-front"></div>
-              <div class="hero-cloud cloud-art-one"></div>
-              <div class="hero-cloud cloud-art-two"></div>
-              <span class="hero-star star-one">✦</span><span class="hero-star star-two">·</span>
-            </div>
-          </article>
-
-          <article class="mood-card">
-            <div class="section-heading compact-heading"><div><p class="eyebrow">Temas rápidos</p><h3>Como te sientes hoy?</h3></div><button class="round-arrow" aria-label="Ver más cielos">↗</button></div>
-            <div class="mood-list" id="moodList">
-              <button class="mood-item selected" data-theme="clear"><span class="mood-visual clear-visual"><i></i></span><span><strong>Cielo despejado</strong><small>Ligero y luminoso</small></span><b>›</b></button>
-              <button class="mood-item" data-theme="sunset"><span class="mood-visual sunset-visual"><i></i></span><span><strong>Amanecer suave</strong><small>Calma para empezar</small></span><b>›</b></button>
-              <button class="mood-item" data-theme="night"><span class="mood-visual night-visual"><i></i></span><span><strong>Noche estrellada</strong><small>Profundo y sereno</small></span><b>›</b></button>
-              <button class="mood-item" data-theme="aurora"><span class="mood-visual aurora-visual"><i></i></span><span><strong>Aurora boreal</strong><small>Un poco de magia</small></span><b>›</b></button>
-            </div>
-          </article>
-        </section>
-
-        <section class="content-section" id="librarySection">
-          <div class="section-heading">
-            <div><p class="eyebrow">Tu selección</p><h2 id="sectionTitle">Escuchadas recientemente</h2></div>
-            <div class="section-controls"><button class="text-button" id="playlistsBtn">Mis listas</button><button class="text-button" id="addMusicBtn">+ Añadir archivos</button><input id="fileInput" type="file" accept="audio/*,video/*" multiple hidden /><button class="round-arrow" id="viewAllBtn" aria-label="Ver todas las canciones">↗</button></div>
+        <article class="mood-card">
+          <div class="section-heading compact-heading"><div><p class="eyebrow">Temas rápidos</p><h3>Cómo te sientes hoy?</h3></div><button class="round-arrow" id="viewMoodsBtn" aria-label="Ver más cielos"><svg class="icon"><use href="#i-arrow-up-right" xlink:href="#i-arrow-up-right" /></svg></button></div>
+          <div class="mood-list" id="moodList">
+            <button class="mood-item selected" data-theme="clear"><span class="mood-visual clear-visual"><i></i></span><span><strong>Cielo despejado</strong><small>Ligero y luminoso</small></span><svg class="icon chevron"><use href="#i-chevron-right" xlink:href="#i-chevron-right" /></svg></button>
+            <button class="mood-item" data-theme="sunset"><span class="mood-visual sunset-visual"><i></i></span><span><strong>Amanecer suave</strong><small>Calma para empezar</small></span><svg class="icon chevron"><use href="#i-chevron-right" xlink:href="#i-chevron-right" /></svg></button>
+            <button class="mood-item" data-theme="night"><span class="mood-visual night-visual"><i></i></span><span><strong>Noche estrellada</strong><small>Profundo y sereno</small></span><svg class="icon chevron"><use href="#i-chevron-right" xlink:href="#i-chevron-right" /></svg></button>
+            <button class="mood-item" data-theme="aurora"><span class="mood-visual aurora-visual"><i></i></span><span><strong>Aurora boreal</strong><small>Un poco de magia</small></span><svg class="icon chevron"><use href="#i-chevron-right" xlink:href="#i-chevron-right" /></svg></button>
           </div>
-          <div class="track-table" id="trackTable">
-            <div class="track-table-head"><span>#</span><span>Título</span><span>Álbum</span><span>Duración</span><span>Acciones</span></div>
-            <div id="trackRows"></div>
-            <div class="empty-state" id="emptyState"><div class="empty-cloud">☁</div><h3>aun no has subido música</h3><p>MP3, MP4 y otros archivos compatibles</p><button class="primary-button small-button" id="emptyAddBtn">Añadir archivos</button></div>
-          </div>
-        </section>
+        </article>
+      </section>
 
-        <section class="content-section inspiration-section">
-          <div class="section-heading"><div><p class="eyebrow">Inspiración</p><h2>Diseña tu ambiente</h2></div><button class="text-button" id="inspirationThemeBtn">Ver temas <span>↗</span></button></div>
-          <div class="theme-strip">
-            <button class="theme-preview theme-preview-sunset" data-theme="sunset"><span>☼</span><strong>Hora dorada</strong><small>Warm &amp; easy</small></button>
-            <button class="theme-preview theme-preview-night" data-theme="night"><span>✦</span><strong>Después de las diez</strong><small>Quiet &amp; deep</small></button>
-            <button class="theme-preview theme-preview-aurora" data-theme="aurora"><span>◒</span><strong>Luces del norte</strong><small>Dream &amp; flow</small></button>
-            <button class="theme-preview theme-preview-cloud" data-theme="cloud"><span>☁</span><strong>Entre nubes</strong><small>Soft &amp; slow</small></button>
-            <button class="theme-preview theme-preview-purple" data-theme="purple"><span>✦</span><strong>Violeta cósmico</strong><small>Calm &amp; creative</small></button>
-            <button class="theme-preview theme-preview-fuchsia" data-theme="fuchsia"><span>✧</span><strong>Fucsia eléctrico</strong><small>Bold &amp; alive</small></button>
-          </div>
-        </section>
-      </main>
-    </div>
+      <section class="content-section" id="librarySection">
+        <div class="section-heading">
+          <div><p class="eyebrow">Tu selección</p><h2 id="sectionTitle">Escuchadas recientemente</h2></div>
+          <div class="section-controls"><button class="text-button" id="playlistsBtn">Mis listas</button><button class="text-button" id="addMusicBtn">+ Añadir archivos</button><input id="fileInput" type="file" accept="audio/*,video/*" multiple hidden /><button class="round-arrow" id="viewAllBtn" aria-label="Ver todas las canciones"><svg class="icon"><use href="#i-arrow-up-right" xlink:href="#i-arrow-up-right" /></svg></button></div>
+        </div>
+        <div class="track-table" id="trackTable">
+          <div class="track-table-head"><span>#</span><span>Título</span><span>Álbum</span><span>Duración</span><span>Acciones</span></div>
+          <div id="trackRows"></div>
+          <div class="empty-state" id="emptyState"><div class="empty-cloud"><svg class="icon"><use href="#i-cloud" xlink:href="#i-cloud" /></svg></div><h3>aún no has subido música</h3><p>MP3, MP4 y otros archivos compatibles</p><button class="primary-button small-button" id="emptyAddBtn">Añadir archivos</button></div>
+        </div>
+      </section>
+
+      <section class="content-section inspiration-section">
+        <div class="section-heading"><div><p class="eyebrow">Inspiración</p><h2>Diseña tu ambiente</h2></div><button class="text-button" id="inspirationThemeBtn">Ver temas <svg class="icon"><use href="#i-arrow-up-right" xlink:href="#i-arrow-up-right" /></svg></button></div>
+        <div class="theme-strip">
+          <button class="theme-preview theme-preview-sunset" data-theme="sunset"><span>☼</span><strong>Hora dorada</strong><small>Warm &amp; easy</small></button>
+          <button class="theme-preview theme-preview-night" data-theme="night"><span>✦</span><strong>Después de las diez</strong><small>Quiet &amp; deep</small></button>
+          <button class="theme-preview theme-preview-aurora" data-theme="aurora"><span>◒</span><strong>Luces del norte</strong><small>Dream &amp; flow</small></button>
+          <button class="theme-preview theme-preview-cloud" data-theme="cloud"><span>☁</span><strong>Entre nubes</strong><small>Soft &amp; slow</small></button>
+          <button class="theme-preview theme-preview-purple" data-theme="purple"><span>✦</span><strong>Violeta cósmico</strong><small>Calm &amp; creative</small></button>
+          <button class="theme-preview theme-preview-fuchsia" data-theme="fuchsia"><span>✧</span><strong>Fucsia eléctrico</strong><small>Bold &amp; alive</small></button>
+        </div>
+      </section>
+    </main>
 
     <footer class="player-bar" aria-label="Reproductor móvil y controles de reproducción">
+      <div class="player-bar-screen" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       <div class="now-playing">
-        <div class="now-cover" id="nowCover"><span>☼</span></div>
+        <div class="now-cover" id="nowCover"><span><svg class="icon"><use href="#i-sun" xlink:href="#i-sun" /></svg></span></div>
         <div class="now-copy"><strong id="nowTitle">Pon música q me aburro</strong><span id="nowArtist">eres un irreverente y un deslenguado</span></div>
-        <button class="heart-button" id="favoriteBtn" aria-label="Añadir a favoritos">♡</button>
+        <button class="heart-button" id="favoriteBtn" aria-label="Añadir a favoritos"><svg class="icon"><use href="#i-heart" xlink:href="#i-heart" /></svg></button>
       </div>
       <div class="player-center">
-        <div class="player-controls"><button class="player-control subtle" id="shuffleBtn" aria-label="Orden aleatorio">⌘</button><button class="player-control" id="previousBtn" aria-label="Canción anterior">◀◀</button><button class="play-button" id="playBtn" aria-label="Reproducir">▶</button><button class="player-control" id="nextBtn" aria-label="Canción siguiente">▶▶</button><button class="player-control subtle" id="repeatBtn" aria-label="Repetir">↻</button></div>
+        <div class="player-controls">
+          <button class="player-control subtle" id="shuffleBtn" aria-label="Orden aleatorio"><svg class="icon"><use href="#i-shuffle" xlink:href="#i-shuffle" /></svg></button>
+          <button class="player-control" id="previousBtn" aria-label="Canción anterior"><svg class="icon"><use href="#i-skip-back" xlink:href="#i-skip-back" /></svg></button>
+          <button class="play-button" id="playBtn" aria-label="Reproducir"><svg class="icon"><use href="#i-play" xlink:href="#i-play" /></svg></button>
+          <button class="player-control" id="nextBtn" aria-label="Canción siguiente"><svg class="icon"><use href="#i-skip-forward" xlink:href="#i-skip-forward" /></svg></button>
+          <button class="player-control subtle" id="repeatBtn" aria-label="Repetir"><svg class="icon"><use href="#i-repeat" xlink:href="#i-repeat" /></svg></button>
+        </div>
         <div class="progress-row"><span id="currentTime">0:00</span><input class="progress-range" id="progressRange" type="range" min="0" max="100" value="0" aria-label="Progreso de la canción" /><span id="totalTime">0:00</span></div>
       </div>
-      <div class="player-tools"><button class="player-tool" id="queueBtn" aria-label="Cola de reproducción">☷</button><span class="volume-icon">⌁</span><input class="volume-range" id="volumeRange" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volumen" /></div>
+      <div class="player-tools"><button class="player-tool" id="queueBtn" aria-label="Cola de reproducción"><svg class="icon"><use href="#i-queue" xlink:href="#i-queue" /></svg></button><span class="volume-icon"><svg class="icon"><use href="#i-volume" xlink:href="#i-volume" /></svg></span><input class="volume-range" id="volumeRange" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volumen" /></div>
     </footer>
 
     <div class="theme-drawer" id="themeDrawer" aria-hidden="true">
       <div class="drawer-backdrop" id="drawerBackdrop"></div>
       <aside class="drawer-panel" aria-label="Personalizar cielo">
-        <div class="drawer-heading"><div><p class="eyebrow">Tu espacio</p><h2>Personaliza tu cielo</h2></div><button class="close-button" id="closeThemeBtn" aria-label="Cerrar">×</button></div>
+        <div class="drawer-heading"><div><p class="eyebrow">Tu espacio</p><h2>Personaliza tu cielo</h2></div><button class="close-button" id="closeThemeBtn" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
         <p class="drawer-intro">Combina colores y atmósferas para crear un reproductor que se sienta como tuyo.</p>
         <div class="drawer-section"><div class="drawer-section-title"><span>Temas</span><small id="activeThemeLabel">Cielo despejado</small></div><div class="theme-options" id="themeOptions"><button class="theme-option active" data-theme="clear"><span class="option-swatch clear-swatch"></span><span>Despejado</span></button><button class="theme-option" data-theme="sunset"><span class="option-swatch sunset-swatch"></span><span>Amanecer</span></button><button class="theme-option" data-theme="night"><span class="option-swatch night-swatch"></span><span>Noche</span></button><button class="theme-option" data-theme="aurora"><span class="option-swatch aurora-swatch"></span><span>Aurora</span></button><button class="theme-option" data-theme="cloud"><span class="option-swatch cloud-swatch"></span><span>Nublado</span></button><button class="theme-option" data-theme="purple"><span class="option-swatch purple-swatch"></span><span>Violeta</span></button><button class="theme-option" data-theme="fuchsia"><span class="option-swatch fuchsia-swatch"></span><span>Fucsia</span></button><button class="theme-option realtime-option" data-theme="realtime"><span class="option-swatch realtime-swatch"></span><span>Tiempo real</span></button></div></div>
         <div class="drawer-section"><div class="drawer-section-title"><span>Detalles</span><small>Personaliza los acentos</small></div><label class="color-control"><span>Color de acento</span><span class="color-input-wrap"><input type="color" id="accentColor" value="#e3ad4b" /><span id="accentHex">#E3AD4B</span></span></label><label class="toggle-control"><span><strong>Fondo animado</strong><small>Nubes flotando suavemente</small></span><input type="checkbox" id="animatedSky" checked /><i></i></label><label class="toggle-control"><span><strong>Reducir movimiento</strong><small>Para una experiencia más tranquila</small></span><input type="checkbox" id="reducedMotion" /><i></i></label></div>
         <div class="drawer-section custom-theme-section"><div class="drawer-section-title"><span>Crear tema</span><small>Tu propia atmósfera</small></div><label class="custom-theme-field"><span>Nombre del tema</span><input id="customThemeName" type="text" maxlength="28" placeholder="Mi cielo" /></label><div class="custom-theme-colors"><label class="custom-theme-field"><span>Fondo</span><input id="customThemeSky" type="color" value="#e6f5ff" /></label><label class="custom-theme-field"><span>Paneles</span><input id="customThemeSurface" type="color" value="#ffffff" /></label><label class="custom-theme-field"><span>Acento</span><input id="customThemeAccent" type="color" value="#e3ad4b" /></label></div><label class="custom-theme-field"><span>Imagen de fondo</span><input id="customThemeImage" type="file" accept="image/png,image/jpeg,image/webp" /></label><small id="customThemeImageName" class="custom-theme-help">Opcional · máximo 2 MB</small><button class="secondary-theme-button" type="button" id="saveCustomThemeBtn">Guardar tema personalizado</button><div class="custom-theme-list" id="customThemeList" aria-live="polite"></div></div>
-        <div class="drawer-preview"><span class="preview-label">Vista previa</span><div class="mini-preview"><div class="mini-sun"></div><div class="mini-card"><span>✦</span><div><b>Tu música, tu cielo</b><small>Así se verá tu espacio</small></div></div></div></div>
+        <div class="drawer-preview"><span class="preview-label">Vista previa</span><div class="mini-preview"><div class="mini-sun"></div><div class="mini-card"><svg class="icon icon-solid"><use href="#i-sparkle" xlink:href="#i-sparkle" /></svg><div><b>Tu música, tu cielo</b><small>Así se verá tu espacio</small></div></div></div></div>
         <button class="primary-button drawer-done" id="doneThemeBtn">Guardar mi cielo</button>
+      </aside>
+    </div>
+
+    <div class="theme-drawer playlist-drawer" id="playlistDrawer" aria-hidden="true">
+      <div class="drawer-backdrop" data-close-modal="playlistDrawer"></div>
+      <aside class="drawer-panel" aria-label="Canciones de la lista">
+        <div class="drawer-heading"><div><p class="eyebrow">Tu lista</p><h2 id="playlistDrawerName">Lista</h2></div><button class="close-button" data-close-modal="playlistDrawer" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
+        <p class="drawer-intro" id="playlistDrawerCount">0 canciones</p>
+        <div class="playlist-drawer-list" id="playlistDrawerRows"></div>
+        <div class="empty-state" id="playlistDrawerEmpty"><div class="empty-cloud"><svg class="icon"><use href="#i-cloud" xlink:href="#i-cloud" /></svg></div><h3>Esta lista está vacía</h3><p>Añade canciones desde el botón + de tu biblioteca.</p></div>
       </aside>
     </div>
 
     <div class="utility-modal" id="editTrackModal" aria-hidden="true">
       <div class="modal-backdrop" data-close-modal="editTrackModal"></div>
       <section class="utility-panel" role="dialog" aria-modal="true" aria-labelledby="editTrackTitle">
-        <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="editTrackTitle">Editar canción</h2></div><button class="close-button" data-close-modal="editTrackModal" aria-label="Cerrar">×</button></div>
+        <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="editTrackTitle">Editar canción</h2></div><button class="close-button" data-close-modal="editTrackModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
         <p class="drawer-intro">Cambia cómo aparece esta canción dentro de starseeked.</p>
         <form id="editTrackForm" class="edit-track-form">
           <label class="custom-theme-field"><span>Título</span><input id="editTrackName" type="text" maxlength="80" required /></label>
@@ -173,7 +230,7 @@
     <div class="utility-modal" id="playlistPickerModal" aria-hidden="true">
       <div class="modal-backdrop" data-close-modal="playlistPickerModal"></div>
       <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="playlistPickerTitle">
-        <div class="drawer-heading"><div><p class="eyebrow">Organiza tu música</p><h2 id="playlistPickerTitle">Añadir a una lista</h2></div><button class="close-button" data-close-modal="playlistPickerModal" aria-label="Cerrar">×</button></div>
+        <div class="drawer-heading"><div><p class="eyebrow">Organiza tu música</p><h2 id="playlistPickerTitle">Añadir a una lista</h2></div><button class="close-button" data-close-modal="playlistPickerModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
         <div class="playlist-picker-list" id="playlistPickerList"></div>
         <button type="button" class="secondary-theme-button" id="pickerNewPlaylistBtn">+ Crear una lista nueva</button>
       </section>
@@ -182,7 +239,7 @@
     <div class="utility-modal" id="playlistManagerModal" aria-hidden="true">
       <div class="modal-backdrop" data-close-modal="playlistManagerModal"></div>
       <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="playlistManagerTitle">
-        <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="playlistManagerTitle">Mis listas</h2></div><button class="close-button" data-close-modal="playlistManagerModal" aria-label="Cerrar">×</button></div>
+        <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="playlistManagerTitle">Mis listas</h2></div><button class="close-button" data-close-modal="playlistManagerModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
         <div class="playlist-picker-list" id="playlistManagerList"></div>
         <button type="button" class="secondary-theme-button" id="managerNewPlaylistBtn">+ Crear una lista nueva</button>
       </section>
@@ -191,7 +248,7 @@
     <div class="utility-modal" id="queueModal" aria-hidden="true">
       <div class="modal-backdrop" data-close-modal="queueModal"></div>
       <section class="utility-panel queue-panel" role="dialog" aria-modal="true" aria-labelledby="queueTitle">
-        <div class="drawer-heading"><div><p class="eyebrow">Reproducción</p><h2 id="queueTitle">Cola de reproducción</h2></div><button class="close-button" data-close-modal="queueModal" aria-label="Cerrar">×</button></div>
+        <div class="drawer-heading"><div><p class="eyebrow">Reproducción</p><h2 id="queueTitle">Cola de reproducción</h2></div><button class="close-button" data-close-modal="queueModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
         <div class="queue-toolbar"><span id="queueCount">0 canciones</span><button class="text-button" id="clearQueueBtn">Vaciar cola</button></div>
         <div class="queue-list" id="queueList"></div>
         <p class="queue-empty" id="queueEmpty">Añade canciones desde tu biblioteca para crear una cola.</p>

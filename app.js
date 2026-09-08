@@ -4,10 +4,29 @@ const trackRows = document.querySelector('#trackRows');
 const emptyState = document.querySelector('#emptyState');
 const toast = document.querySelector('#toast');
 
+// Iconos SVG reutilizados donde antes había glifos unicode sueltos (♪ ♫ ♥ ♡ ▶ Ⅱ ＋ ☷ ✎ 🗑 ↑ ↓ × ›),
+// para que coincidan con el sprite de <symbol> definido en index.html.
+const icon = (id, solid = false) => `<svg class="icon${solid ? ' icon-solid' : ''}"><use href="#${id}" xlink:href="#${id}" /></svg>`;
+const noteIcon = icon('i-note');
+const sunIcon = icon('i-sun');
+const heartIcon = icon('i-heart');
+const heartFilledIcon = icon('i-heart-filled', true);
+const playIcon = icon('i-play');
+const pauseIcon = icon('i-pause');
+const queueAddIcon = icon('i-plus');
+const playlistAddIcon = icon('i-list-plus');
+const editIcon = icon('i-edit');
+const trashIcon = icon('i-trash');
+const arrowUpIcon = icon('i-arrow-up');
+const arrowDownIcon = icon('i-arrow-down');
+const closeIcon = icon('i-close');
+const chevronIcon = icon('i-chevron-right');
+const moreIcon = icon('i-more');
+
 const themeData = {
-  clear: { label: 'Cielo despejado', sky: '#e6f5ff', deep: '#b8e1f5', pale: '#f8fcff', accent: '#e3ad4b', accentDeep: '#bf8124', accentSoft: '#fff0c8' },
-  sunset: { label: 'Amanecer suave', sky: '#fff0df', deep: '#efb6a0', pale: '#fffaf5', accent: '#e27861', accentDeep: '#b9564c', accentSoft: '#ffe1c5' },
-  night: { label: 'Noche estrellada', sky: '#dfe6fb', deep: '#9caeda', pale: '#f5f7ff', accent: '#dfb95e', accentDeep: '#926f2e', accentSoft: '#f9eabe', ink: '#26395f', inkSoft: '#7180a3', surface: 'rgba(255,255,255,.48)' },
+  clear: { label: 'Cielo despejado', sky: '#dff2ff', deep: '#b3ddf2', pale: '#f8fcff', accent: '#f0a93e', accentDeep: '#b97418', accentSoft: '#ffedc4', ink: '#12293f', inkSoft: '#5c7a8d' },
+  sunset: { label: 'Amanecer suave', sky: '#fff0df', deep: '#efb6a0', pale: '#fffaf5', accent: '#e27861', accentDeep: '#b9564c', accentSoft: '#ffe1c5', ink: '#5b3628', inkSoft: '#8a6255' },
+  night: { label: 'Noche estrellada', sky: '#dfe6fb', deep: '#9caeda', pale: '#f5f7ff', accent: '#dfb95e', accentDeep: '#926f2e', accentSoft: '#f9eabe', ink: '#26395f', inkSoft: '#7180a3', surface: 'color-mix(in srgb, var(--sky-deep) 30%, white 55%)' },
   aurora: { label: 'Aurora boreal', sky: '#d9f5f2', deep: '#a6d7d4', pale: '#f6fffe', accent: '#48a995', accentDeep: '#267b70', accentSoft: '#c7eee5', ink: '#174e59', inkSoft: '#648b91' },
   cloud: { label: 'Día nublado', sky: '#e5edf1', deep: '#bdcdd5', pale: '#fafcfc', accent: '#d49356', accentDeep: '#a96334', accentSoft: '#f5dfcb', ink: '#3d5662', inkSoft: '#738993' },
   purple: { label: 'Violeta cósmico', sky: '#eee6ff', deep: '#c7b5ed', pale: '#fcfaff', accent: '#8861d8', accentDeep: '#6740a9', accentSoft: '#e7dcff', ink: '#39265c', inkSoft: '#7d6b9b' },
@@ -39,11 +58,9 @@ const libraryDbName = 'starseeked-library';
 let libraryDbPromise;
 const playlistStorageKey = 'starseeked-playlists';
 const queueStorageKey = 'starseeked-queue';
-const defaultPlaylists = [
-  { id: 'sunrises', name: 'Amaneceres', color: 'sunset' },
-  { id: 'quiet-nights', name: 'Noches tranquilas', color: 'night' },
-  { id: 'focus', name: 'Para concentrarse', color: 'aurora' }
-];
+// Sin listas de muestra: tu biblioteca empieza vacía y creces tus propias
+// listas desde "Mis listas".
+const defaultPlaylists = [];
 let playlists = loadPlaylists();
 let queueIds = loadQueueIds();
 let editingTrackId = '';
@@ -114,14 +131,54 @@ function formatTime(seconds) {
   return `${mins}:${secs}`;
 }
 
+// Genera una portada de repuesto (para canciones sin carátula propia) a partir
+// de los colores del tema activo, para que la notificación de Android y la
+// pantalla de bloqueo cambien de color junto con el resto de la app.
+let cachedArtwork = { key: '', url: '' };
+function generateThemeArtwork() {
+  try {
+    const styles = getComputedStyle(document.documentElement);
+    const sky = styles.getPropertyValue('--sky').trim() || '#dff2ff';
+    const skyDeep = styles.getPropertyValue('--sky-deep').trim() || '#b3ddf2';
+    const accent = styles.getPropertyValue('--accent').trim() || '#f0a93e';
+    const accentDeep = styles.getPropertyValue('--accent-deep').trim() || '#b97418';
+    const key = `${sky}|${skyDeep}|${accent}|${accentDeep}`;
+    if (cachedArtwork.key === key) return cachedArtwork.url;
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+    const backdrop = ctx.createLinearGradient(0, 0, size, size);
+    backdrop.addColorStop(0, sky);
+    backdrop.addColorStop(1, skyDeep);
+    ctx.fillStyle = backdrop;
+    ctx.fillRect(0, 0, size, size);
+    const sun = ctx.createRadialGradient(size * .66, size * .36, size * .04, size * .66, size * .36, size * .34);
+    sun.addColorStop(0, accent);
+    sun.addColorStop(1, accentDeep);
+    ctx.fillStyle = sun;
+    ctx.beginPath();
+    ctx.arc(size * .66, size * .36, size * .19, 0, Math.PI * 2);
+    ctx.fill();
+    const url = canvas.toDataURL('image/png');
+    cachedArtwork = { key, url };
+    return url;
+  } catch {
+    return '';
+  }
+}
+
 function updateMediaSession() {
   if (!('mediaSession' in navigator) || !window.MediaMetadata || currentIndex < 0 || !tracks[currentIndex]) return;
   const track = tracks[currentIndex];
+  const artworkSrc = track.coverData || generateThemeArtwork() || 'icon.svg';
   navigator.mediaSession.metadata = new MediaMetadata({
     title: track.title,
     artist: track.artist,
     album: track.album,
-    artwork: [{ src: track.coverData || 'icon.svg', sizes: '512x512', type: track.coverData ? 'image/*' : 'image/svg+xml' }]
+    artwork: [{ src: artworkSrc, sizes: '512x512', type: track.coverData ? 'image/*' : 'image/png' }]
   });
 }
 
@@ -177,14 +234,14 @@ function gradientFor(index) {
   return gradients[index % gradients.length];
 }
 
-function coverMarkup(track, icon = '♪') {
+function coverMarkup(track, iconHtml = noteIcon) {
   const style = track.coverData
     ? `background-image:url("${track.coverData}");background-size:cover;background-position:center;background-color:${track.gradient}`
     : `background:${track.gradient}`;
-  return `<span class="track-cover${track.coverData ? ' has-cover' : ''}" style="${escapeHtml(style)}">${track.coverData ? '' : icon}</span>`;
+  return `<span class="track-cover${track.coverData ? ' has-cover' : ''}" style="${escapeHtml(style)}">${track.coverData ? '' : iconHtml}</span>`;
 }
 
-function applyCover(element, track, icon = '♫') {
+function applyCover(element, track, iconHtml = noteIcon) {
   if (!element) return;
   if (track?.coverData) {
     element.style.background = track.gradient;
@@ -197,7 +254,7 @@ function applyCover(element, track, icon = '♫') {
     element.style.backgroundSize = '';
     element.style.backgroundPosition = '';
     element.style.background = track?.gradient || '';
-    element.innerHTML = `<span>${icon}</span>`;
+    element.innerHTML = `<span>${iconHtml}</span>`;
   }
 }
 
@@ -205,16 +262,59 @@ function renderPlaylists() {
   const list = $('#playlistList');
   if (!list) return;
   list.innerHTML = playlists.map((playlist) => `<button class="nav-item playlist-item${activePlaylistId === playlist.id ? ' active' : ''}" data-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0}</small></button>`).join('');
-  list.querySelectorAll('[data-playlist-id]').forEach((button) => button.addEventListener('click', () => changeView('playlist', button.dataset.playlistId)));
+  list.querySelectorAll('[data-playlist-id]').forEach((button) => button.addEventListener('click', () => openPlaylistDrawer(button.dataset.playlistId)));
   renderPlaylistManager();
 }
 
 function renderPlaylistManager() {
   const list = $('#playlistManagerList');
   if (!list) return;
-  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-manager-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>›</b></button>`).join('');
-  list.querySelectorAll('[data-manager-playlist-id]').forEach((button) => button.addEventListener('click', () => { closeModal('playlistManagerModal'); changeView('playlist', button.dataset.managerPlaylistId); }));
+  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-manager-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>${chevronIcon}</b></button>`).join('');
+  list.querySelectorAll('[data-manager-playlist-id]').forEach((button) => button.addEventListener('click', () => { closeModal('playlistManagerModal'); openPlaylistDrawer(button.dataset.managerPlaylistId); }));
 }
+
+// Ventana lateral izquierda (hermana de .theme-drawer, pero desde el otro
+// borde) con las canciones de UNA lista concreta, para no perder el
+// contexto de la pantalla principal al mirar dentro de una lista.
+function renderPlaylistDrawerTracks(playlistId) {
+  const list = $('#playlistDrawerRows');
+  const playlist = playlists.find((item) => item.id === playlistId);
+  if (!list || !playlist) return;
+  const playlistTracks = (playlist.trackIds || []).map((id) => tracks.find((track) => track.id === id)).filter(Boolean);
+  $('#playlistDrawerName').textContent = playlist.name;
+  $('#playlistDrawerCount').textContent = `${playlistTracks.length} ${playlistTracks.length === 1 ? 'canción' : 'canciones'}`;
+  $('#playlistDrawerEmpty').hidden = playlistTracks.length !== 0;
+  list.innerHTML = playlistTracks.map((track) => {
+    const actualIndex = tracks.indexOf(track);
+    return `<div class="queue-item${actualIndex === currentIndex ? ' active' : ''}">
+      <button class="queue-item-play" data-drawer-action="play" data-drawer-index="${actualIndex}" aria-label="Reproducir ${escapeHtml(track.title)}">${coverMarkup(track)}<span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span></button>
+      <span class="queue-item-actions"><button data-drawer-action="remove" data-drawer-index="${actualIndex}" aria-label="Quitar de la lista">${closeIcon}</button></span>
+    </div>`;
+  }).join('');
+}
+
+function openPlaylistDrawer(playlistId) {
+  activePlaylistId = playlistId;
+  renderPlaylists();
+  renderPlaylistDrawerTracks(playlistId);
+  openModal('playlistDrawer');
+}
+
+$('#playlistDrawerRows').addEventListener('click', (event) => {
+  const target = event.target.closest('[data-drawer-action]');
+  if (!target) return;
+  const index = Number(target.dataset.drawerIndex);
+  if (target.dataset.drawerAction === 'play') selectTrack(index);
+  if (target.dataset.drawerAction === 'remove') {
+    const playlist = playlists.find((item) => item.id === activePlaylistId);
+    const track = tracks[index];
+    if (!playlist || !track) return;
+    playlist.trackIds = (playlist.trackIds || []).filter((id) => id !== track.id);
+    savePlaylists();
+    renderPlaylists();
+    renderPlaylistDrawerTracks(activePlaylistId);
+  }
+});
 
 function addTrackToQueue(index, shouldNotify = true) {
   const track = tracks[index];
@@ -248,7 +348,7 @@ function addTrackToPlaylist(trackIndex, playlistId) {
 function openPlaylistPicker(index) {
   pickerTrackIndex = index;
   const list = $('#playlistPickerList');
-  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>›</b></button>`).join('');
+  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>${chevronIcon}</b></button>`).join('');
   list.querySelectorAll('[data-playlist-id]').forEach((button) => button.addEventListener('click', () => addTrackToPlaylist(pickerTrackIndex, button.dataset.playlistId)));
   openModal('playlistPickerModal');
 }
@@ -278,17 +378,22 @@ function renderTracks() {
     row.innerHTML = `
       <span class="track-number">${String(visibleIndex + 1).padStart(2, '0')}</span>
       <button class="track-info" data-action="play" data-index="${actualIndex}" aria-label="Reproducir ${track.title}">
-        ${coverMarkup(track, actualIndex === currentIndex && !audio.paused ? '♫' : '♪')}
+        ${coverMarkup(track)}
         <span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span>
       </button>
       <span class="track-album">${escapeHtml(track.album)}</span>
       <span class="track-duration">${track.duration ? formatTime(track.duration) : '--:--'}</span>
       <span class="track-actions">
-        <button class="track-action" data-action="queue" data-index="${actualIndex}" aria-label="Añadir ${track.title} a la cola">＋</button>
-        <button class="track-action" data-action="playlist" data-index="${actualIndex}" aria-label="Añadir ${track.title} a una lista">☷</button>
-        <button class="track-action" data-action="edit" data-index="${actualIndex}" aria-label="Editar ${track.title}">✎</button>
-        <button class="track-action" data-action="delete" data-index="${actualIndex}" aria-label="Borrar ${track.title}">🗑</button>
-        <button class="track-menu heart-button${track.favorite ? ' liked' : ''}" data-action="favorite" data-index="${actualIndex}" aria-label="Añadir ${track.title} a favoritos">${track.favorite ? '♥' : '♡'}</button>
+        <div class="track-more-wrap">
+          <button class="track-action track-more" data-action="more" data-index="${actualIndex}" aria-haspopup="true" aria-expanded="false" aria-label="Más opciones para ${track.title}">${moreIcon}</button>
+          <div class="track-menu-popover" role="menu">
+            <button class="track-menu-item" data-action="queue" data-index="${actualIndex}" role="menuitem">${queueAddIcon}<span>Añadir a la cola</span></button>
+            <button class="track-menu-item" data-action="playlist" data-index="${actualIndex}" role="menuitem">${playlistAddIcon}<span>Añadir a una lista</span></button>
+            <button class="track-menu-item" data-action="edit" data-index="${actualIndex}" role="menuitem">${editIcon}<span>Editar canción</span></button>
+            <button class="track-menu-item danger" data-action="delete" data-index="${actualIndex}" role="menuitem">${trashIcon}<span>Borrar canción</span></button>
+          </div>
+        </div>
+        <button class="track-menu heart-button${track.favorite ? ' liked' : ''}" data-action="favorite" data-index="${actualIndex}" aria-label="Añadir ${track.title} a favoritos">${track.favorite ? heartFilledIcon : heartIcon}</button>
       </span>`;
     trackRows.appendChild(row);
   });
@@ -372,7 +477,7 @@ function selectTrack(index, autoplay = true) {
 
 function updatePlayButton() {
   const isPlaying = !audio.paused && currentIndex >= 0;
-  $('#playBtn').textContent = isPlaying ? 'Ⅱ' : '▶';
+  $('#playBtn').innerHTML = isPlaying ? pauseIcon : playIcon;
   $('#playBtn').setAttribute('aria-label', isPlaying ? 'Pausar' : 'Reproducir');
   if ('mediaSession' in navigator && currentIndex >= 0) navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
 }
@@ -448,7 +553,7 @@ function loadTheme(themeName, customAccent) {
   root.style.setProperty('--accent-soft', theme.accentSoft);
   root.style.setProperty('--ink', theme.ink || '#1b4057');
   root.style.setProperty('--ink-soft', theme.inkSoft || '#5e7c8d');
-  root.style.setProperty('--surface', theme.surface || 'rgba(255, 255, 255, .58)');
+  root.style.setProperty('--surface', theme.surface || 'color-mix(in srgb, var(--sky-deep) 32%, white 68%)');
   root.style.setProperty('--sky-image', theme.backgroundImage ? `url("${theme.backgroundImage}")` : 'none');
   $('#activeThemeLabel').textContent = themeName === 'realtime' ? getRealtimeLabel() : theme.label;
   $('#accentColor').value = customAccent || theme.accent;
@@ -458,6 +563,9 @@ function loadTheme(themeName, customAccent) {
   renderCustomThemes();
   localStorage.setItem('cieloplay-theme', JSON.stringify({ name: themeName, accent: customAccent || null }));
   document.querySelector('meta[name="theme-color"]').setAttribute('content', theme.sky);
+  // La portada de repuesto de la notificación usa los colores del tema, así
+  // que si cambias de cielo mientras suena algo, la refrescamos al momento.
+  updateMediaSession();
 }
 
 function openDrawer() { $('#themeDrawer').classList.add('open'); $('#themeDrawer').setAttribute('aria-hidden', 'false'); }
@@ -475,8 +583,8 @@ function renderQueue() {
     const trackIndex = tracks.indexOf(track);
     const isCurrent = trackIndex === currentIndex;
     return `<div class="queue-item${isCurrent ? ' active' : ''}">
-      <button class="queue-item-play" data-queue-action="play" data-queue-index="${queueIndex}" aria-label="Reproducir ${escapeHtml(track.title)}">${coverMarkup(track, isCurrent && !audio.paused ? '♫' : '♪')}<span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span></button>
-      <span class="queue-item-actions"><button data-queue-action="up" data-queue-index="${queueIndex}" aria-label="Subir canción">↑</button><button data-queue-action="down" data-queue-index="${queueIndex}" aria-label="Bajar canción">↓</button><button data-queue-action="remove" data-queue-index="${queueIndex}" aria-label="Quitar canción">×</button></span>
+      <button class="queue-item-play" data-queue-action="play" data-queue-index="${queueIndex}" aria-label="Reproducir ${escapeHtml(track.title)}">${coverMarkup(track)}<span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span></button>
+      <span class="queue-item-actions"><button data-queue-action="up" data-queue-index="${queueIndex}" aria-label="Subir canción">${arrowUpIcon}</button><button data-queue-action="down" data-queue-index="${queueIndex}" aria-label="Bajar canción">${arrowDownIcon}</button><button data-queue-action="remove" data-queue-index="${queueIndex}" aria-label="Quitar canción">${closeIcon}</button></span>
     </div>`;
   }).join('');
   saveQueue();
@@ -525,7 +633,7 @@ async function deleteTrack(index) {
     $('#currentTime').textContent = '0:00';
     $('#progressRange').value = 0;
     $('#favoriteBtn').classList.remove('liked');
-    applyCover($('#nowCover'), null, '☼');
+    applyCover($('#nowCover'), null, sunIcon);
   } else if (currentIndex > index) {
     currentIndex -= 1;
   }
@@ -579,7 +687,27 @@ $('#previousBtn').addEventListener('click', playPrevious);
 $('#shuffleBtn').addEventListener('click', (event) => { isShuffle = !isShuffle; event.currentTarget.classList.toggle('active', isShuffle); showToast(isShuffle ? 'Orden aleatorio activado.' : 'Orden aleatorio desactivado.'); });
 $('#repeatBtn').addEventListener('click', (event) => { isRepeat = !isRepeat; event.currentTarget.classList.toggle('active', isRepeat); showToast(isRepeat ? 'Repetición activada.' : 'Repetición desactivada.'); });
 $('#favoriteBtn').addEventListener('click', () => { if (currentIndex < 0) return; tracks[currentIndex].favorite = !tracks[currentIndex].favorite; persistTrackState(tracks[currentIndex]); $('#favoriteBtn').classList.toggle('liked', tracks[currentIndex].favorite); showToast(tracks[currentIndex].favorite ? 'Añadida a favoritos.' : 'Quitada de favoritos.'); renderTracks(); });
+// El menú "más opciones" de cada canción (⋮) es un popover simple: un botón
+// lo abre, cualquier clic fuera o un Escape lo cierra. Solo hay uno abierto
+// a la vez para que la biblioteca no se llene de menús sueltos.
+function closeAllTrackMenus(exceptWrap) {
+  $$('.track-more-wrap.open').forEach((wrap) => {
+    if (wrap === exceptWrap) return;
+    wrap.classList.remove('open');
+    wrap.querySelector('.track-more')?.setAttribute('aria-expanded', 'false');
+  });
+}
+
 trackRows.addEventListener('click', (event) => {
+  const moreBtn = event.target.closest('[data-action="more"]');
+  if (moreBtn) {
+    const wrap = moreBtn.closest('.track-more-wrap');
+    const willOpen = !wrap.classList.contains('open');
+    closeAllTrackMenus();
+    wrap.classList.toggle('open', willOpen);
+    moreBtn.setAttribute('aria-expanded', String(willOpen));
+    return;
+  }
   const target = event.target.closest('[data-action]');
   if (!target) return;
   const index = Number(target.dataset.index);
@@ -589,6 +717,14 @@ trackRows.addEventListener('click', (event) => {
   if (target.dataset.action === 'playlist') openPlaylistPicker(index);
   if (target.dataset.action === 'edit') editTrack(index);
   if (target.dataset.action === 'delete') deleteTrack(index);
+  closeAllTrackMenus();
+});
+
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('.track-more-wrap')) closeAllTrackMenus();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeAllTrackMenus();
 });
 
 $('#editTrackCover').addEventListener('change', (event) => {
@@ -672,7 +808,7 @@ function changeView(view, playlistId = '') {
 }
 $$('.nav-item[data-view]').forEach((button) => button.addEventListener('click', () => changeView(button.dataset.view)));
 document.addEventListener('keydown', (event) => { if (event.key === '/' && document.activeElement.tagName !== 'INPUT') { event.preventDefault(); $('#searchInput').focus(); } if (event.code === 'Space' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'BUTTON') { event.preventDefault(); $('#playBtn').click(); } });
-$('#openThemeBtn').addEventListener('click', openDrawer); $('#inspirationThemeBtn').addEventListener('click', openDrawer); $('#closeThemeBtn').addEventListener('click', closeDrawer); $('#doneThemeBtn').addEventListener('click', () => { closeDrawer(); showToast('Tu cielo se ha guardado.'); }); $('#drawerBackdrop').addEventListener('click', closeDrawer);
+$('#openThemeBtn').addEventListener('click', openDrawer); $('#inspirationThemeBtn').addEventListener('click', openDrawer); $('#viewMoodsBtn')?.addEventListener('click', openDrawer); $('#closeThemeBtn').addEventListener('click', closeDrawer); $('#doneThemeBtn').addEventListener('click', () => { closeDrawer(); showToast('Tu cielo se ha guardado.'); }); $('#drawerBackdrop').addEventListener('click', closeDrawer);
 $$('[data-theme]').forEach((button) => button.addEventListener('click', () => loadTheme(button.dataset.theme)));
 $('#accentColor').addEventListener('input', (event) => { const current = JSON.parse(localStorage.getItem('cieloplay-theme') || '{"name":"clear"}'); loadTheme(current.name, event.target.value); });
 $('#customThemeImage').addEventListener('change', (event) => {
