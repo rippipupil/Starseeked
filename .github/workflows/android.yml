@@ -27,6 +27,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Usar una firma de depuración fija (para poder actualizar la app)
+        run: |
+          mkdir -p ~/.android
+          cp debug.keystore ~/.android/debug.keystore
+
       - name: Instalar Capacitor
         run: npm install
 
@@ -37,6 +42,9 @@ jobs:
 
       - name: Crear proyecto Android
         run: npx cap add android
+
+      - name: Generar el icono de la app a partir de assets/icon.png
+        run: npx @capacitor/assets generate --android
 
       - name: Copiar la aplicación web al proyecto Android
         run: npx cap sync android
