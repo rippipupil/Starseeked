@@ -181,6 +181,7 @@ function generateThemeArtwork() {
 }
 
 function updateMediaSession() {
+  pushNativeMediaMetadata();
   if (!('mediaSession' in navigator) || !window.MediaMetadata || currentIndex < 0 || !tracks[currentIndex]) return;
   const track = tracks[currentIndex];
   const artworkSrc = track.coverData || generateThemeArtwork() || 'icon.svg';
@@ -225,6 +226,70 @@ function setupMediaSession() {
   };
   Object.entries(actions).forEach(([action, handler]) => {
     try { navigator.mediaSession.setActionHandler(action, handler); } catch { /* Acción no compatible en este navegador. */ }
+  });
+}
+
+/* =========================================================
+   Puente con el widget de notificación nativo (solo Android)
+   =========================================================
+   navigator.mediaSession (arriba) ya reporta metadatos y controles al
+   propio navegador, pero el WebView de Android que usa la app empaquetada
+   (a diferencia de Chrome como aplicación) no lo convierte por sí solo en
+   una notificación real del sistema — hace falta un puente nativo propio
+   (plugin "MediaNotification", añadido al proyecto Android) que sí
+   construya esa notificación con portada y controles, y aquí la mantenemos
+   sincronizada con cada cambio de canción o de reproducción/pausa. En la
+   versión web/PWA "nativeMedia" simplemente no existe y todo esto no hace
+   nada, tal y como debe ser. */
+const nativeMedia = (() => {
+  try {
+    const cap = window.Capacitor;
+    if (cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins && cap.Plugins.MediaNotification) {
+      return cap.Plugins.MediaNotification;
+    }
+  } catch { /* Fuera de la app empaquetada no hay puente nativo. */ }
+  return null;
+})();
+
+function pushNativeMediaMetadata() {
+  if (!nativeMedia || currentIndex < 0 || !tracks[currentIndex]) return;
+  const track = tracks[currentIndex];
+  nativeMedia
+    .updateMetadata({
+      title: track.title || 'starseeked',
+      artist: track.artist || '',
+      album: track.album || '',
+      artwork: track.coverData || ''
+    })
+    .catch(() => {});
+}
+
+function pushNativeMediaPlaybackState() {
+  if (!nativeMedia) return;
+  const isPlaying = !audio.paused && currentIndex >= 0;
+  nativeMedia
+    .updatePlaybackState({
+      playing: isPlaying,
+      position: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
+      duration: Number.isFinite(audio.duration) ? audio.duration : 0
+    })
+    .catch(() => {});
+}
+
+function setupNativeMediaBridge() {
+  if (!nativeMedia) return;
+  nativeMedia.addListener('controlAction', (data) => {
+    const action = data && data.action;
+    switch (action) {
+      case 'play': audio.play().catch(() => {}); break;
+      case 'pause': audio.pause(); break;
+      case 'stop': audio.pause(); audio.currentTime = 0; break;
+      case 'previous': playPrevious(); break;
+      case 'next': playNext(); break;
+      case 'seekBackward': seekBy(-10); break;
+      case 'seekForward': seekBy(10); break;
+      default: break;
+    }
   });
 }
 
@@ -596,6 +661,7 @@ function updatePlayButton() {
   $('#playBtn').innerHTML = isPlaying ? pauseIcon : playIcon;
   $('#playBtn').setAttribute('aria-label', isPlaying ? 'Pausar' : 'Reproducir');
   if ('mediaSession' in navigator && currentIndex >= 0) navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  pushNativeMediaPlaybackState();
 }
 
 function playNext() {
@@ -1090,6 +1156,7 @@ $('#reducedMotion').checked = reduced;
 $('#animatedSky').checked = animated === null ? true : animated === 'true';
 document.body.classList.toggle('reduced-motion', reduced || animated === 'false');
 setupMediaSession();
+setupNativeMediaBridge();
 if ('serviceWorker' in navigator && ['http:', 'https:'].includes(location.protocol)) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
