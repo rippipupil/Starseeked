@@ -575,6 +575,38 @@ body.reduced-motion * { animation-duration: .01ms !important; animation-iteratio
 .media-element { display: none; }
 
 /* =========================================================
+   Nube y sincronización (modal de cuenta)
+   ========================================================= */
+.account-panel-step { display: block; }
+/* Dentro de este modal los campos van en columna (etiqueta arriba, campo
+   abajo) en vez de en fila como en el ajuste de tema, porque aquí los
+   valores (URLs, claves largas) no caben junto a la etiqueta. */
+#accountModal .custom-theme-field { display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-height: auto; padding: 10px 0; border-top: 1px solid var(--line-soft); }
+#accountModal .custom-theme-field:first-of-type { border-top: 0; }
+#accountModal .custom-theme-field > span { font-size: 11px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+#accountModal .custom-theme-field input[type="url"],
+#accountModal .custom-theme-field input[type="email"],
+#accountModal .custom-theme-field input[type="password"],
+#accountModal .custom-theme-field input[type="text"] { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--glass-tint) 72%, transparent); color: var(--ink); font-size: 13px; }
+#accountModal .custom-theme-field input::placeholder { color: var(--ink-soft); }
+
+.account-setup-steps { display: flex; flex-direction: column; gap: 9px; margin: 0 0 18px; padding-left: 20px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.account-setup-steps li::marker { color: var(--accent-deep); font-weight: 700; }
+.account-setup-steps code { padding: 1px 6px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-deep); font-size: 11px; }
+
+.account-session-row { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.account-session-row .playlist-cover-mini { display: grid; place-items: center; width: 40px; height: 40px; }
+.account-session-row .playlist-cover-mini .icon { width: 18px; height: 18px; color: white; filter: none; }
+.account-session-row strong { display: block; overflow: hidden; max-width: 260px; font-size: 13px; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+.account-session-row small { color: var(--ink-soft); font-size: 11px; }
+
+.account-quota { margin: 16px 0 6px; }
+.account-quota-row { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 7px; color: var(--ink-soft); font-size: 11px; font-weight: 700; }
+
+.account-reconfigure-btn { display: block; margin: 16px auto 0; text-align: center; }
+#accountSyncStatus { display: block; margin: 10px 0 0; text-align: center; }
+
+/* =========================================================
    Breakpoints
    ========================================================= */
 @media (max-width: 1100px) {

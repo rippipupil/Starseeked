@@ -85,7 +85,7 @@
         </label>
         <a class="android-download-button" id="androidDownloadBtn" href="https://github.com/rippipupil/Starseeked/releases/latest" target="_blank" rel="noopener"><svg class="icon"><use href="#i-download" xlink:href="#i-download" /></svg><span>Descargar APK</span></a>
         <button class="icon-button notification-button" aria-label="Notificaciones"><svg class="icon"><use href="#i-bell" xlink:href="#i-bell" /></svg><i></i></button>
-        <button class="avatar-button" aria-label="Tu perfil">L</button>
+        <button class="avatar-button" id="accountBtn" aria-label="Tu cuenta y sincronización en la nube">L</button>
       </div>
 
       <!-- Se mantienen ocultos por compatibilidad: app.js los usa sin comprobación nula, pero la gestión de listas vive ahora en el modal "Mis listas". -->
@@ -296,8 +296,55 @@
       </section>
     </div>
 
+    <div class="utility-modal" id="accountModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="accountModal"></div>
+      <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
+        <div class="drawer-heading"><div><p class="eyebrow">Tu cuenta</p><h2 id="accountTitle">Nube y sincronización</h2></div><button class="close-button" data-close-modal="accountModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
+
+        <div class="account-panel-step" id="accountStepSetup">
+          <p class="drawer-intro">Para sincronizar tu música y tus listas entre el PC y el móvil hace falta tu propio backend gratuito en Supabase (nunca compartido con nadie más). Solo se configura una vez por dispositivo.</p>
+          <ol class="account-setup-steps">
+            <li>Crea un proyecto gratis en <strong>supabase.com</strong> (con tu correo, sin tarjeta).</li>
+            <li>Pega este archivo en su "SQL Editor" y dale a "Run": <code>supabase-setup.sql</code>.</li>
+            <li>En "Project Settings → API", copia la "Project URL" y la clave "anon public" aquí abajo.</li>
+          </ol>
+          <label class="custom-theme-field"><span>URL del proyecto</span><input id="accountSupabaseUrl" type="url" placeholder="https://xxxxxxxx.supabase.co" /></label>
+          <label class="custom-theme-field"><span>Clave "anon public"</span><input id="accountSupabaseKey" type="text" placeholder="eyJhbGciOi..." /></label>
+          <small class="custom-theme-help" id="accountSetupHelp">Esta clave es pública por diseño: solo funciona junto con tu sesión, no da acceso a nada por sí sola.</small>
+          <button type="button" class="primary-button full-width-button" id="accountSaveConfigBtn">Guardar configuración</button>
+        </div>
+
+        <div class="account-panel-step" id="accountStepAuth" hidden>
+          <p class="drawer-intro">Crea una cuenta o inicia sesión para sincronizar este dispositivo.</p>
+          <label class="custom-theme-field"><span>Correo</span><input id="accountEmail" type="email" autocomplete="email" placeholder="tucorreo@ejemplo.com" /></label>
+          <label class="custom-theme-field"><span>Contraseña</span><input id="accountPassword" type="password" autocomplete="current-password" placeholder="Mínimo 6 caracteres" /></label>
+          <small class="custom-theme-help" id="accountAuthHelp"></small>
+          <div class="modal-actions">
+            <button type="button" class="secondary-theme-button" id="accountSignUpBtn">Crear cuenta</button>
+            <button type="button" class="primary-button" id="accountSignInBtn">Iniciar sesión</button>
+          </div>
+          <button type="button" class="text-button account-reconfigure-btn" id="accountReconfigureBtn">Cambiar configuración de Supabase</button>
+        </div>
+
+        <div class="account-panel-step" id="accountStepSession" hidden>
+          <div class="account-session-row">
+            <span class="playlist-cover-mini aurora" aria-hidden="true"><svg class="icon"><use href="#i-user" xlink:href="#i-user" /></svg></span>
+            <div><strong id="accountSessionEmail">—</strong><small>Sesión iniciada en este dispositivo</small></div>
+          </div>
+          <button type="button" class="primary-button full-width-button" id="accountSyncNowBtn"><svg class="icon"><use href="#i-cloud" xlink:href="#i-cloud" /></svg><span>Sincronizar ahora</span></button>
+          <div class="account-quota">
+            <div class="account-quota-row"><span>Espacio usado en la nube</span><span id="accountQuotaLabel">— de 1 GB</span></div>
+            <span class="storage-bar"><span id="accountQuotaBar" style="width:0%"></span></span>
+          </div>
+          <small class="custom-theme-help" id="accountSyncStatus"></small>
+          <button type="button" class="text-button account-reconfigure-btn" id="accountSignOutBtn">Cerrar sesión</button>
+        </div>
+      </section>
+    </div>
+
     <video id="audioElement" class="media-element" playsinline preload="metadata"></video>
     <div class="toast" id="toast" role="status"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.9/dist/umd/supabase.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
