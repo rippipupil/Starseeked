@@ -660,6 +660,18 @@ let cloudUser = null;
 let cloudSyncing = false;
 let playlistsSyncTimer = null;
 
+// Si una petición a la nube se queda colgada (wifi rara, servidor lento...)
+// esto hace que nunca se quede pillada para siempre: al pasar "ms"
+// milisegundos, se da por fallida con un mensaje claro en vez de dejar el
+// botón en "Iniciando sesión…"/"Sincronizando…" eternamente.
+function withTimeout(promise, ms, timeoutMessage) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(timeoutMessage || 'Tiempo de espera agotado.')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+}
+
 function loadCloudConfig() {
   try {
     return JSON.parse(localStorage.getItem(cloudConfigKey) || 'null');
@@ -860,71 +872,79 @@ async function syncNow() {
   const statusEl = $('#accountSyncStatus');
   if (statusEl) statusEl.textContent = 'Sincronizando…';
   try {
-    for (const track of tracks) await pushTrackMetadataToCloud(track);
-    pushPlaylistsToCloud();
+    await withTimeout((async () => {
+      for (const track of tracks) await pushTrackMetadataToCloud(track);
+      pushPlaylistsToCloud();
 
-    const { data: remoteTracks, error: tracksError } = await cloudClient
-      .from('tracks').select('*').eq('user_id', cloudUser.id);
-    if (tracksError) throw tracksError;
-    const localTrackIds = new Set(tracks.map((track) => track.id));
-    let importedCount = 0;
-    for (const row of remoteTracks || []) {
-      if (localTrackIds.has(row.id)) continue;
-      try {
-        const { data: blob, error: downloadError } = await cloudClient.storage
-          .from(cloudBucket).download(row.storage_path || `${cloudUser.id}/${row.id}`);
-        if (downloadError) throw downloadError;
-        const track = {
-          id: row.id,
-          title: row.title || '',
-          artist: row.artist || '',
-          album: row.album || '',
-          blob,
-          url: URL.createObjectURL(blob),
-          duration: row.duration || 0,
-          favorite: row.favorite || false,
-          playedAt: row.played_at || 0,
-          gradient: row.gradient || gradientFor(tracks.length),
-          coverData: row.cover_data || '',
-          createdAt: row.created_at || Date.now(),
-        };
-        await saveTrackToLibrary(track);
-        tracks.push(track);
-        localTrackIds.add(track.id);
-        importedCount += 1;
-      } catch {
-        // Si una canción concreta falla al bajar, seguimos con las demás.
+      const { data: remoteTracks, error: tracksError } = await cloudClient
+        .from('tracks').select('*').eq('user_id', cloudUser.id);
+      if (tracksError) throw tracksError;
+      const localTrackIds = new Set(tracks.map((track) => track.id));
+      let importedCount = 0;
+      for (const row of remoteTracks || []) {
+        if (localTrackIds.has(row.id)) continue;
+        try {
+          const { data: blob, error: downloadError } = await withTimeout(
+            cloudClient.storage.from(cloudBucket).download(row.storage_path || `${cloudUser.id}/${row.id}`),
+            20000,
+          );
+          if (downloadError) throw downloadError;
+          const track = {
+            id: row.id,
+            title: row.title || '',
+            artist: row.artist || '',
+            album: row.album || '',
+            blob,
+            url: URL.createObjectURL(blob),
+            duration: row.duration || 0,
+            favorite: row.favorite || false,
+            playedAt: row.played_at || 0,
+            gradient: row.gradient || gradientFor(tracks.length),
+            coverData: row.cover_data || '',
+            createdAt: row.created_at || Date.now(),
+          };
+          await saveTrackToLibrary(track);
+          tracks.push(track);
+          localTrackIds.add(track.id);
+          importedCount += 1;
+        } catch {
+          // Si una canción concreta falla al bajar, seguimos con las demás.
+        }
       }
-    }
 
-    const { data: remotePlaylists, error: playlistsError } = await cloudClient
-      .from('playlists').select('*').eq('user_id', cloudUser.id);
-    if (playlistsError) throw playlistsError;
-    const localPlaylistIds = new Set(playlists.map((playlist) => playlist.id));
-    for (const row of remotePlaylists || []) {
-      if (localPlaylistIds.has(row.id)) continue;
-      playlists.push({
-        id: row.id,
-        name: row.name || '',
-        color: row.color || 'aurora',
-        cover: row.cover || '',
-        trackIds: Array.isArray(row.track_ids) ? row.track_ids : [],
-      });
-    }
+      const { data: remotePlaylists, error: playlistsError } = await cloudClient
+        .from('playlists').select('*').eq('user_id', cloudUser.id);
+      if (playlistsError) throw playlistsError;
+      const localPlaylistIds = new Set(playlists.map((playlist) => playlist.id));
+      for (const row of remotePlaylists || []) {
+        if (localPlaylistIds.has(row.id)) continue;
+        playlists.push({
+          id: row.id,
+          name: row.name || '',
+          color: row.color || 'aurora',
+          cover: row.cover || '',
+          trackIds: Array.isArray(row.track_ids) ? row.track_ids : [],
+        });
+      }
 
-    saveQueue();
-    localStorage.setItem(playlistStorageKey, JSON.stringify(playlists));
-    renderTracks();
-    renderPlaylists();
+      saveQueue();
+      localStorage.setItem(playlistStorageKey, JSON.stringify(playlists));
+      renderTracks();
+      renderPlaylists();
+      if (statusEl) {
+        statusEl.textContent = importedCount
+          ? `Sincronizado · ${importedCount} ${importedCount === 1 ? 'canción nueva traída' : 'canciones nuevas traídas'}.`
+          : 'Sincronizado · todo al día.';
+      }
+      updateCloudQuotaLabel();
+      showToast('Biblioteca sincronizada con la nube.');
+    })(), 30000, 'La sincronización está tardando demasiado.');
+  } catch (error) {
     if (statusEl) {
-      statusEl.textContent = importedCount
-        ? `Sincronizado · ${importedCount} ${importedCount === 1 ? 'canción nueva traída' : 'canciones nuevas traídas'}.`
-        : 'Sincronizado · todo al día.';
+      statusEl.textContent = error?.message === 'La sincronización está tardando demasiado.'
+        ? `${error.message} Comprueba tu conexión e inténtalo de nuevo.`
+        : 'No se pudo sincronizar. Revisa tu conexión o tu configuración de Supabase.';
     }
-    updateCloudQuotaLabel();
-    showToast('Biblioteca sincronizada con la nube.');
-  } catch {
-    if (statusEl) statusEl.textContent = 'No se pudo sincronizar. Revisa tu conexión o tu configuración de Supabase.';
     showToast('No se pudo sincronizar con la nube.');
   } finally {
     cloudSyncing = false;
@@ -1005,7 +1025,7 @@ function hexToRgba(hex, alpha) {
   return `rgba(${number >> 16}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`;
 }
 
-function renderCustomThemes() {
+function renderCustomThemes(){
   const list = $('#customThemeList');
   if (!list) return;
   list.innerHTML = customThemes.map((theme) => {
@@ -1474,17 +1494,25 @@ $('#accountReconfigureBtn')?.addEventListener('click', () => {
 });
 
 $('#accountSignUpBtn')?.addEventListener('click', async () => {
-  if (!cloudClient) return;
+  const helpEl = $('#accountAuthHelp');
+  if (!cloudClient) initCloudClient();
+  if (!cloudClient) {
+    helpEl.textContent = 'No se pudo conectar con la nube. Comprueba tu conexión a internet e inténtalo de nuevo.';
+    return;
+  }
   const email = $('#accountEmail').value.trim();
   const password = $('#accountPassword').value;
-  const helpEl = $('#accountAuthHelp');
   if (!email || password.length < 6) {
     helpEl.textContent = 'Escribe un correo válido y una contraseña de al menos 6 caracteres.';
     return;
   }
   helpEl.textContent = 'Creando cuenta…';
   try {
-    const { data, error } = await cloudClient.auth.signUp({ email, password });
+    const { data, error } = await withTimeout(
+      cloudClient.auth.signUp({ email, password }),
+      15000,
+      'La nube está tardando demasiado en responder.',
+    );
     if (error) throw error;
     if (data?.session) {
       cloudUser = data.session.user;
@@ -1496,32 +1524,50 @@ $('#accountSignUpBtn')?.addEventListener('click', async () => {
       helpEl.textContent = 'Cuenta creada · revisa tu correo para confirmarla y luego inicia sesión aquí.';
     }
   } catch (error) {
-    helpEl.textContent = error?.message === 'User already registered'
-      ? 'Ese correo ya tiene una cuenta · inicia sesión abajo.'
-      : 'No se pudo crear la cuenta. Comprueba tus datos e inténtalo de nuevo.';
+    if (error?.message === 'User already registered') {
+      helpEl.textContent = 'Ese correo ya tiene una cuenta · inicia sesión abajo.';
+    } else if (error?.message === 'La nube está tardando demasiado en responder.') {
+      helpEl.textContent = `${error.message} Revisa tu conexión e inténtalo de nuevo.`;
+    } else {
+      helpEl.textContent = 'No se pudo crear la cuenta. Comprueba tus datos e inténtalo de nuevo.';
+    }
   }
 });
 
 $('#accountSignInBtn')?.addEventListener('click', async () => {
-  if (!cloudClient) return;
+  const helpEl = $('#accountAuthHelp');
+  if (!cloudClient) initCloudClient();
+  if (!cloudClient) {
+    helpEl.textContent = 'No se pudo conectar con la nube. Comprueba tu conexión a internet e inténtalo de nuevo.';
+    return;
+  }
   const email = $('#accountEmail').value.trim();
   const password = $('#accountPassword').value;
-  const helpEl = $('#accountAuthHelp');
   if (!email || !password) {
     helpEl.textContent = 'Escribe tu correo y tu contraseña.';
     return;
   }
   helpEl.textContent = 'Iniciando sesión…';
   try {
-    const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
+    const { data, error } = await withTimeout(
+      cloudClient.auth.signInWithPassword({ email, password }),
+      15000,
+      'La nube está tardando demasiado en responder.',
+    );
     if (error) throw error;
     cloudUser = data.session.user;
     setAccountButtonState();
     renderAccountModalState();
     showToast(`Sesión iniciada como ${cloudUser.email}.`);
     syncNow();
-  } catch {
-    helpEl.textContent = 'No se pudo iniciar sesión. Revisa el correo y la contraseña.';
+  } catch (error) {
+    if (error?.message === 'La nube está tardando demasiado en responder.') {
+      helpEl.textContent = `${error.message} Revisa tu conexión e inténtalo de nuevo.`;
+    } else if (error?.message === 'Email not confirmed') {
+      helpEl.textContent = 'Tu correo aún no está confirmado. Revisa la bandeja de entrada, o desactiva "Confirm email" en tu proyecto de Supabase si prefieres no usarlo.';
+    } else {
+      helpEl.textContent = 'No se pudo iniciar sesión. Revisa el correo y la contraseña.';
+    }
   }
 });
 
