@@ -2,7 +2,7 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#dff2ff" />
     <meta name="description" content="starseeked, un reproductor de música personalizable inspirado en el cielo." />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -205,10 +205,23 @@
     <div class="theme-drawer playlist-drawer" id="playlistDrawer" aria-hidden="true">
       <div class="drawer-backdrop" data-close-modal="playlistDrawer"></div>
       <aside class="drawer-panel" aria-label="Canciones de la lista">
-        <div class="drawer-heading"><div><p class="eyebrow">Tu lista</p><h2 id="playlistDrawerName">Lista</h2></div><button class="close-button" data-close-modal="playlistDrawer" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
-        <p class="drawer-intro" id="playlistDrawerCount">0 canciones</p>
-        <div class="playlist-drawer-list" id="playlistDrawerRows"></div>
-        <div class="empty-state" id="playlistDrawerEmpty"><div class="empty-cloud"><svg class="icon"><use href="#i-cloud" xlink:href="#i-cloud" /></svg></div><h3>Esta lista está vacía</h3><p>Añade canciones desde el botón + de tu biblioteca.</p></div>
+        <div class="sky-bubbles playlist-drawer-bg" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="drawer-panel-body">
+          <div class="drawer-heading"><div><p class="eyebrow">Tu lista</p><h2 id="playlistDrawerName">Lista</h2></div><button class="close-button" data-close-modal="playlistDrawer" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
+          <div class="playlist-drawer-hero">
+            <div class="playlist-drawer-collage empty" id="playlistDrawerCollage" aria-hidden="true"><svg class="icon"><use href="#i-note" xlink:href="#i-note" /></svg></div>
+            <div class="playlist-drawer-meta">
+              <p class="drawer-intro" id="playlistDrawerCount">0 canciones</p>
+              <div class="playlist-drawer-transport">
+                <button class="play-button" id="playlistDrawerPlayBtn" aria-label="Reproducir esta lista"><svg class="icon"><use href="#i-play" xlink:href="#i-play" /></svg></button>
+                <button class="player-control subtle" id="playlistDrawerShuffleBtn" aria-label="Reproducir esta lista en orden aleatorio"><svg class="icon"><use href="#i-shuffle" xlink:href="#i-shuffle" /></svg></button>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="primary-button playlist-drawer-add-button" id="playlistDrawerAddBtn"><svg class="icon"><use href="#i-plus" xlink:href="#i-plus" /></svg><span>Añadir canciones</span></button>
+          <div class="playlist-drawer-list" id="playlistDrawerRows"></div>
+          <div class="empty-state" id="playlistDrawerEmpty"><div class="empty-cloud"><svg class="icon"><use href="#i-cloud" xlink:href="#i-cloud" /></svg></div><h3>Esta lista está vacía</h3><p>Añade canciones desde el botón de arriba o desde el + de tu biblioteca.</p></div>
+        </div>
       </aside>
     </div>
 
@@ -232,7 +245,7 @@
       <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="playlistPickerTitle">
         <div class="drawer-heading"><div><p class="eyebrow">Organiza tu música</p><h2 id="playlistPickerTitle">Añadir a una lista</h2></div><button class="close-button" data-close-modal="playlistPickerModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
         <div class="playlist-picker-list" id="playlistPickerList"></div>
-        <button type="button" class="secondary-theme-button" id="pickerNewPlaylistBtn">+ Crear una lista nueva</button>
+        <button type="button" class="primary-button full-width-button" id="pickerNewPlaylistBtn"><svg class="icon"><use href="#i-plus" xlink:href="#i-plus" /></svg><span>Crear una lista nueva</span></button>
       </section>
     </div>
 
@@ -241,7 +254,35 @@
       <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="playlistManagerTitle">
         <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="playlistManagerTitle">Mis listas</h2></div><button class="close-button" data-close-modal="playlistManagerModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
         <div class="playlist-picker-list" id="playlistManagerList"></div>
-        <button type="button" class="secondary-theme-button" id="managerNewPlaylistBtn">+ Crear una lista nueva</button>
+        <button type="button" class="primary-button full-width-button" id="managerNewPlaylistBtn"><svg class="icon"><use href="#i-plus" xlink:href="#i-plus" /></svg><span>Crear una lista nueva</span></button>
+      </section>
+    </div>
+
+    <div class="utility-modal" id="createPlaylistModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="createPlaylistModal"></div>
+      <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="createPlaylistTitle">
+        <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="createPlaylistTitle">Nueva lista</h2></div><button class="close-button" data-close-modal="createPlaylistModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
+        <p class="drawer-intro">Ponle un nombre y, si quieres, una portada.</p>
+        <form id="createPlaylistForm" class="create-playlist-form">
+          <label class="playlist-cover-picker" for="createPlaylistCover">
+            <span class="playlist-cover-preview" id="createPlaylistPreview"><svg class="icon"><use href="#i-note" xlink:href="#i-note" /></svg></span>
+            <span class="playlist-cover-edit" aria-hidden="true"><svg class="icon"><use href="#i-edit" xlink:href="#i-edit" /></svg></span>
+            <input id="createPlaylistCover" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+          </label>
+          <label class="playlist-name-field"><span>Nombre de la lista</span><input id="createPlaylistName" type="text" maxlength="40" placeholder="Mi nueva lista" required /></label>
+          <small class="custom-theme-help" id="createPlaylistCoverHelp">Imagen opcional · máximo 2 MB</small>
+          <div class="modal-actions"><button type="button" class="secondary-theme-button" data-close-modal="createPlaylistModal">Cancelar</button><button type="submit" class="primary-button"><svg class="icon"><use href="#i-plus" xlink:href="#i-plus" /></svg><span>Crear lista</span></button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="utility-modal" id="playlistAddTracksModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="playlistAddTracksModal"></div>
+      <section class="utility-panel compact-panel" role="dialog" aria-modal="true" aria-labelledby="playlistAddTracksTitle">
+        <div class="drawer-heading"><div><p class="eyebrow">Tu biblioteca</p><h2 id="playlistAddTracksTitle">Añadir canciones</h2></div><button class="close-button" data-close-modal="playlistAddTracksModal" aria-label="Cerrar"><svg class="icon"><use href="#i-close" xlink:href="#i-close" /></svg></button></div>
+        <p class="drawer-intro">Toca el botón de cada canción para añadirla o quitarla de esta lista.</p>
+        <div class="playlist-drawer-list" id="playlistAddTracksList"></div>
+        <p class="queue-empty" id="playlistAddTracksEmpty">Añade canciones a tu biblioteca primero desde “+ Añadir archivos”.</p>
       </section>
     </div>
 

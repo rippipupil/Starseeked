@@ -131,6 +131,16 @@ function formatTime(seconds) {
   return `${mins}:${secs}`;
 }
 
+// Duración total de una lista, al estilo "3 h 12 min" / "42 min" (no tiene
+// sentido mostrar segundos cuando se suman decenas de canciones).
+function formatPlaylistDuration(totalSeconds) {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '';
+  const totalMinutes = Math.max(1, Math.round(totalSeconds / 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
+}
+
 // Genera una portada de repuesto (para canciones sin carátula propia) a partir
 // de los colores del tema activo, para que la notificación de Android y la
 // pantalla de bloqueo cambien de color junto con el resto de la app.
@@ -258,10 +268,17 @@ function applyCover(element, track, iconHtml = noteIcon) {
   }
 }
 
+// Miniatura de una lista: la portada elegida al crearla, o si no puso
+// ninguna, el mismo degradado de color que ya se usaba como puntito plano.
+function playlistCoverMarkup(playlist) {
+  const style = playlist.cover ? `background-image:url("${playlist.cover}")` : '';
+  return `<span class="playlist-cover-mini ${escapeHtml(playlist.color || 'aurora')}" style="${escapeHtml(style)}"></span>`;
+}
+
 function renderPlaylists() {
   const list = $('#playlistList');
   if (!list) return;
-  list.innerHTML = playlists.map((playlist) => `<button class="nav-item playlist-item${activePlaylistId === playlist.id ? ' active' : ''}" data-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0}</small></button>`).join('');
+  list.innerHTML = playlists.map((playlist) => `<button class="nav-item playlist-item${activePlaylistId === playlist.id ? ' active' : ''}" data-playlist-id="${escapeHtml(playlist.id)}">${playlistCoverMarkup(playlist)}<span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0}</small></button>`).join('');
   list.querySelectorAll('[data-playlist-id]').forEach((button) => button.addEventListener('click', () => openPlaylistDrawer(button.dataset.playlistId)));
   renderPlaylistManager();
 }
@@ -269,8 +286,36 @@ function renderPlaylists() {
 function renderPlaylistManager() {
   const list = $('#playlistManagerList');
   if (!list) return;
-  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-manager-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>${chevronIcon}</b></button>`).join('');
+  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-manager-playlist-id="${escapeHtml(playlist.id)}">${playlistCoverMarkup(playlist)}<span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>${chevronIcon}</b></button>`).join('');
   list.querySelectorAll('[data-manager-playlist-id]').forEach((button) => button.addEventListener('click', () => { closeModal('playlistManagerModal'); openPlaylistDrawer(button.dataset.managerPlaylistId); }));
+}
+
+// Collage de portadas (estilo Spotify) para que la lista se identifique de
+// un vistazo en vez de mostrar solo un título; con la lista vacía cae en un
+// icono de nota, y con una sola canción ocupa el hueco entero en vez de
+// dejar tres celdas en blanco.
+function renderPlaylistDrawerCollage(playlist, playlistTracks) {
+  const collage = $('#playlistDrawerCollage');
+  if (!collage) return;
+  if (playlist.cover) {
+    collage.className = 'playlist-drawer-collage single';
+    collage.innerHTML = `<span style="${escapeHtml(`background-image:url("${playlist.cover}")`)}"></span>`;
+    return;
+  }
+  const covers = playlistTracks.slice(0, 4);
+  if (!covers.length) {
+    collage.className = 'playlist-drawer-collage empty';
+    collage.innerHTML = noteIcon;
+    return;
+  }
+  const layoutClass = covers.length === 1 ? ' single' : covers.length === 2 ? ' double' : '';
+  collage.className = `playlist-drawer-collage${layoutClass}`;
+  collage.innerHTML = covers.map((track) => {
+    const style = track.coverData
+      ? `background-image:url("${track.coverData}");background-color:${track.gradient}`
+      : `background:${track.gradient}`;
+    return `<span style="${escapeHtml(style)}"></span>`;
+  }).join('');
 }
 
 // Ventana lateral izquierda (hermana de .theme-drawer, pero desde el otro
@@ -281,14 +326,18 @@ function renderPlaylistDrawerTracks(playlistId) {
   const playlist = playlists.find((item) => item.id === playlistId);
   if (!list || !playlist) return;
   const playlistTracks = (playlist.trackIds || []).map((id) => tracks.find((track) => track.id === id)).filter(Boolean);
+  const totalDuration = playlistTracks.reduce((sum, track) => sum + (track.duration || 0), 0);
+  const durationLabel = formatPlaylistDuration(totalDuration);
+  const countLabel = `${playlistTracks.length} ${playlistTracks.length === 1 ? 'canción' : 'canciones'}`;
   $('#playlistDrawerName').textContent = playlist.name;
-  $('#playlistDrawerCount').textContent = `${playlistTracks.length} ${playlistTracks.length === 1 ? 'canción' : 'canciones'}`;
+  $('#playlistDrawerCount').textContent = durationLabel ? `${countLabel} · ${durationLabel}` : countLabel;
   $('#playlistDrawerEmpty').hidden = playlistTracks.length !== 0;
+  renderPlaylistDrawerCollage(playlist, playlistTracks);
   list.innerHTML = playlistTracks.map((track) => {
     const actualIndex = tracks.indexOf(track);
     return `<div class="queue-item${actualIndex === currentIndex ? ' active' : ''}">
       <button class="queue-item-play" data-drawer-action="play" data-drawer-index="${actualIndex}" aria-label="Reproducir ${escapeHtml(track.title)}">${coverMarkup(track)}<span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span></button>
-      <span class="queue-item-actions"><button data-drawer-action="remove" data-drawer-index="${actualIndex}" aria-label="Quitar de la lista">${closeIcon}</button></span>
+      <span class="queue-item-actions"><button data-drawer-action="queue" data-drawer-index="${actualIndex}" aria-label="Añadir a la cola">${queueAddIcon}</button><button data-drawer-action="remove" data-drawer-index="${actualIndex}" aria-label="Quitar de la lista">${closeIcon}</button></span>
     </div>`;
   }).join('');
 }
@@ -300,11 +349,33 @@ function openPlaylistDrawer(playlistId) {
   openModal('playlistDrawer');
 }
 
+// Reproduce una lista entera de golpe (botón grande de play o el de
+// aleatorio junto al collage), sustituyendo la cola actual por sus
+// canciones — así "reproducir lista" hace lo mismo que en cualquier otro
+// reproductor en vez de limitarse a abrir el primer tema suelto.
+function playPlaylist(playlistId, shuffle = false) {
+  const playlist = playlists.find((item) => item.id === playlistId);
+  const playlistTracks = (playlist?.trackIds || []).map((id) => tracks.find((track) => track.id === id)).filter(Boolean);
+  if (!playlist || !playlistTracks.length) return showToast('Añade canciones a esta lista para reproducirla.');
+  queueIds = playlistTracks.map((track) => track.id);
+  saveQueue();
+  renderQueue();
+  isShuffle = shuffle;
+  $('#shuffleBtn').classList.toggle('active', isShuffle);
+  const startTrack = shuffle ? playlistTracks[Math.floor(Math.random() * playlistTracks.length)] : playlistTracks[0];
+  selectTrack(tracks.indexOf(startTrack));
+  showToast(shuffle ? `Reproduciendo “${playlist.name}” en orden aleatorio.` : `Reproduciendo “${playlist.name}”.`);
+}
+
+$('#playlistDrawerPlayBtn').addEventListener('click', () => playPlaylist(activePlaylistId, false));
+$('#playlistDrawerShuffleBtn').addEventListener('click', () => playPlaylist(activePlaylistId, true));
+
 $('#playlistDrawerRows').addEventListener('click', (event) => {
   const target = event.target.closest('[data-drawer-action]');
   if (!target) return;
   const index = Number(target.dataset.drawerIndex);
   if (target.dataset.drawerAction === 'play') selectTrack(index);
+  if (target.dataset.drawerAction === 'queue') addTrackToQueue(index);
   if (target.dataset.drawerAction === 'remove') {
     const playlist = playlists.find((item) => item.id === activePlaylistId);
     const track = tracks[index];
@@ -314,6 +385,51 @@ $('#playlistDrawerRows').addEventListener('click', (event) => {
     renderPlaylists();
     renderPlaylistDrawerTracks(activePlaylistId);
   }
+});
+
+// Ventana "Añadir canciones": toda la biblioteca con un botón de
+// añadir/quitar por fila, para completar una lista sin tener que ir
+// canción por canción desde el menú "···" de cada tema.
+function renderPlaylistAddTracks() {
+  const list = $('#playlistAddTracksList');
+  const playlist = playlists.find((item) => item.id === activePlaylistId);
+  if (!list || !playlist) return;
+  const trackIds = new Set(playlist.trackIds || []);
+  $('#playlistAddTracksEmpty').hidden = tracks.length !== 0;
+  list.innerHTML = tracks.map((track, index) => {
+    const inList = trackIds.has(track.id);
+    return `<div class="queue-item${inList ? ' active' : ''}">
+      <span class="queue-item-play">${coverMarkup(track)}<span><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}</small></span></span>
+      <span class="queue-item-actions"><button data-add-track-index="${index}" aria-label="${inList ? `Quitar ${escapeHtml(track.title)} de la lista` : `Añadir ${escapeHtml(track.title)} a la lista`}">${inList ? closeIcon : queueAddIcon}</button></span>
+    </div>`;
+  }).join('');
+}
+
+function openPlaylistAddTracks() {
+  if (!activePlaylistId) return;
+  renderPlaylistAddTracks();
+  openModal('playlistAddTracksModal');
+}
+
+$('#playlistDrawerAddBtn').addEventListener('click', openPlaylistAddTracks);
+
+$('#playlistAddTracksList').addEventListener('click', (event) => {
+  const target = event.target.closest('[data-add-track-index]');
+  if (!target) return;
+  const track = tracks[Number(target.dataset.addTrackIndex)];
+  const playlist = playlists.find((item) => item.id === activePlaylistId);
+  if (!track || !playlist) return;
+  playlist.trackIds = Array.isArray(playlist.trackIds) ? playlist.trackIds : [];
+  if (playlist.trackIds.includes(track.id)) {
+    playlist.trackIds = playlist.trackIds.filter((id) => id !== track.id);
+  } else {
+    playlist.trackIds.push(track.id);
+    showToast(`“${track.title}” añadida a “${playlist.name}”.`);
+  }
+  savePlaylists();
+  renderPlaylists();
+  renderPlaylistDrawerTracks(activePlaylistId);
+  renderPlaylistAddTracks();
 });
 
 function addTrackToQueue(index, shouldNotify = true) {
@@ -348,7 +464,7 @@ function addTrackToPlaylist(trackIndex, playlistId) {
 function openPlaylistPicker(index) {
   pickerTrackIndex = index;
   const list = $('#playlistPickerList');
-  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-playlist-id="${escapeHtml(playlist.id)}"><span class="playlist-dot ${escapeHtml(playlist.color || 'aurora')}"></span><span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>${chevronIcon}</b></button>`).join('');
+  list.innerHTML = playlists.map((playlist) => `<button class="playlist-picker-item" data-playlist-id="${escapeHtml(playlist.id)}">${playlistCoverMarkup(playlist)}<span>${escapeHtml(playlist.name)}</span><small>${playlist.trackIds?.length || 0} canciones</small><b>${chevronIcon}</b></button>`).join('');
   list.querySelectorAll('[data-playlist-id]').forEach((button) => button.addEventListener('click', () => addTrackToPlaylist(pickerTrackIndex, button.dataset.playlistId)));
   openModal('playlistPickerModal');
 }
@@ -859,19 +975,75 @@ $('#saveCustomThemeBtn').addEventListener('click', () => {
 });
 $('#animatedSky').addEventListener('change', (event) => { document.body.classList.toggle('reduced-motion', !event.target.checked); localStorage.setItem('cieloplay-animated', event.target.checked); });
 $('#reducedMotion').addEventListener('change', (event) => { document.body.classList.toggle('reduced-motion', event.target.checked); localStorage.setItem('cieloplay-reduced', event.target.checked); });
-function createPlaylistFromPrompt() {
-  const name = window.prompt('Nombre de tu nueva lista:');
-  if (!name?.trim()) return null;
-  const cleanName = name.trim();
-  const playlist = { id: `playlist-${Date.now()}`, name: cleanName, color: 'aurora', trackIds: [] };
+// Menú "Nueva lista": reemplaza el window.prompt() de antes (feo, sin
+// estilo y sin sitio para una portada) por un modal con la misma estética
+// retro del resto de la app, con nombre + imagen opcional.
+const playlistColorCycle = ['aurora', 'sunset', 'night'];
+let createPlaylistReturnTo = null;
+
+function resetCreatePlaylistForm() {
+  $('#createPlaylistForm').reset();
+  const preview = $('#createPlaylistPreview');
+  preview.className = 'playlist-cover-preview';
+  preview.style.backgroundImage = '';
+  preview.innerHTML = noteIcon;
+  $('#createPlaylistCoverHelp').textContent = 'Imagen opcional · máximo 2 MB';
+}
+
+function openCreatePlaylistModal(returnTo = null) {
+  createPlaylistReturnTo = returnTo;
+  resetCreatePlaylistForm();
+  openModal('createPlaylistModal');
+  window.setTimeout(() => $('#createPlaylistName').focus(), 80);
+}
+
+$('#createPlaylistCover').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    $('#createPlaylistCoverHelp').textContent = 'La imagen supera el límite de 2 MB.';
+    event.target.value = '';
+    return;
+  }
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    const preview = $('#createPlaylistPreview');
+    preview.style.backgroundImage = `url("${dataUrl}")`;
+    preview.classList.add('has-image');
+    $('#createPlaylistCoverHelp').textContent = `${file.name} · lista para guardar`;
+  } catch {
+    $('#createPlaylistCoverHelp').textContent = 'No se pudo leer la imagen.';
+  }
+});
+
+$('#createPlaylistForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const name = $('#createPlaylistName').value.trim();
+  if (!name) return;
+  const coverFile = $('#createPlaylistCover').files[0];
+  let cover = '';
+  if (coverFile) {
+    if (coverFile.size > 2 * 1024 * 1024) return showToast('La portada no puede superar 2 MB.');
+    try {
+      cover = await readFileAsDataUrl(coverFile);
+    } catch {
+      return showToast('No se pudo leer la portada.');
+    }
+  }
+  const playlist = { id: `playlist-${Date.now()}`, name, color: playlistColorCycle[playlists.length % playlistColorCycle.length], cover, trackIds: [] };
   playlists.push(playlist);
   savePlaylists();
   renderPlaylists();
-  showToast(`Lista “${cleanName}” creada.`);
-  return playlist;
-}
+  closeModal('createPlaylistModal');
+  showToast(`Lista “${name}” creada.`);
+  if (createPlaylistReturnTo === 'picker') {
+    openPlaylistPicker(pickerTrackIndex);
+  } else {
+    openPlaylistDrawer(playlist.id);
+  }
+});
 
-$('#newPlaylistBtn').addEventListener('click', createPlaylistFromPrompt);
+$('#newPlaylistBtn').addEventListener('click', () => openCreatePlaylistModal());
 $('#playlistsBtn').addEventListener('click', () => { renderPlaylistManager(); openModal('playlistManagerModal'); });
 $('#viewAllBtn').addEventListener('click', () => changeView('biblioteca'));
 $('#queueBtn').addEventListener('click', () => { renderQueue(); openModal('queueModal'); });
@@ -906,11 +1078,8 @@ $('#queueList').addEventListener('click', (event) => {
     renderQueue();
   }
 });
-$('#pickerNewPlaylistBtn').addEventListener('click', () => {
-  const playlist = createPlaylistFromPrompt();
-  if (playlist) openPlaylistPicker(pickerTrackIndex);
-});
-$('#managerNewPlaylistBtn').addEventListener('click', () => { createPlaylistFromPrompt(); renderPlaylistManager(); });
+$('#pickerNewPlaylistBtn').addEventListener('click', () => openCreatePlaylistModal('picker'));
+$('#managerNewPlaylistBtn').addEventListener('click', () => { closeModal('playlistManagerModal'); openCreatePlaylistModal(); });
 
 const savedTheme = JSON.parse(localStorage.getItem('cieloplay-theme') || 'null');
 loadTheme(savedTheme?.name || 'clear', savedTheme?.accent || undefined);
