@@ -2,18 +2,48 @@
   "name": "starseeked-mobile",
   "version": "1.0.0",
   "private": true,
-  "description": "Empaquetado Android de starseeked",
+  "description": "Empaquetado de starseeked para Android y Windows",
+  "main": "electron/main.js",
   "scripts": {
     "android:add": "cap add android",
     "android:sync": "cap sync android",
-    "android:open": "cap open android"
-  },
-  "dependencies": {
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/core": "^7.0.0"
+    "android:open": "cap open android",
+    "electron:start": "electron .",
+    "dist:win": "electron-builder --win"
   },
   "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^7.0.0",
-    "@capacitor/assets": "^3.0.5"
+    "@capacitor/core": "^7.0.0",
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.starseeked.player",
+    "productName": "starseeked",
+    "files": [
+      "index.html",
+      "app.js",
+      "styles.css",
+      "manifest.webmanifest",
+      "sw.js",
+      "icon.svg",
+      "electron/**/*"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
