@@ -1025,7 +1025,7 @@ function hexToRgba(hex, alpha) {
   return `rgba(${number >> 16}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`;
 }
 
-function renderCustomThemes(){
+function renderCustomThemes() {
   const list = $('#customThemeList');
   if (!list) return;
   list.innerHTML = customThemes.map((theme) => {
