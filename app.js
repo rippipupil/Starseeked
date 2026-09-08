@@ -81,6 +81,7 @@ function loadPlaylists() {
 
 function savePlaylists() {
   localStorage.setItem(playlistStorageKey, JSON.stringify(playlists));
+  pushPlaylistsToCloud();
 }
 
 function loadQueueIds() {
@@ -619,7 +620,9 @@ function deleteTrackFromLibrary(trackId) {
 }
 
 function persistTrackState(track) {
-  if (track) saveTrackToLibrary(track).catch(() => {});
+  if (!track) return;
+  saveTrackToLibrary(track).catch(() => {});
+  pushTrackMetadataToCloud(track);
 }
 
 async function loadStoredTracks() {
@@ -634,6 +637,297 @@ async function loadStoredTracks() {
     if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
   } catch {
     showToast('No se pudo abrir la biblioteca interna de starseeked.');
+  }
+}
+
+// ============================================================
+// Nube: sincronización entre PC y Android vía Supabase
+// ============================================================
+// Backend de Supabase integrado por defecto (el proyecto de starseeked):
+// así, cualquiera que se descargue la app solo tiene que crear una cuenta
+// con su correo para tener su propia nube privada, sin configurar nada.
+// Cada cuenta ve únicamente sus propios datos (lo protegen las políticas
+// de seguridad del propio proyecto), aunque todas compartan un mismo
+// backend. Quien quiera usar su propio proyecto de Supabase en vez de
+// este puede hacerlo desde "Cambiar configuración de Supabase" dentro del
+// panel de cuenta — eso tiene siempre prioridad sobre estos valores.
+const DEFAULT_SUPABASE_URL = 'https://wdqfazjvdjmhwtjqrhll.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkcWZhemp2ZGptaHd0anFyaGxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4OTYyMjYsImV4cCI6MjEwNDQ3MjIyNn0.VVAsT7HE4SjAdmhwmrflX2CsqNNhsLvGPUPPyLoVPlc';
+const cloudConfigKey = 'starseeked-cloud-config';
+const cloudBucket = 'starseeked-library';
+let cloudClient = null;
+let cloudUser = null;
+let cloudSyncing = false;
+let playlistsSyncTimer = null;
+
+function loadCloudConfig() {
+  try {
+    return JSON.parse(localStorage.getItem(cloudConfigKey) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function saveCloudConfig(config) {
+  localStorage.setItem(cloudConfigKey, JSON.stringify(config));
+}
+
+function clearCloudConfig() {
+  localStorage.removeItem(cloudConfigKey);
+}
+
+// Un backend guardado a mano (desde "Cambiar configuración de Supabase")
+// siempre gana sobre el que trae la app integrado de fábrica.
+function getCloudCredentials() {
+  const config = loadCloudConfig();
+  const url = (config?.url || DEFAULT_SUPABASE_URL || '').trim();
+  const key = (config?.key || DEFAULT_SUPABASE_KEY || '').trim();
+  return { url, key };
+}
+
+function initCloudClient() {
+  const { url, key } = getCloudCredentials();
+  if (!url || !key || typeof window.supabase === 'undefined') {
+    cloudClient = null;
+    return null;
+  }
+  try {
+    cloudClient = window.supabase.createClient(url, key, {
+      auth: { persistSession: true, autoRefreshToken: true },
+    });
+  } catch {
+    cloudClient = null;
+  }
+  return cloudClient;
+}
+
+function setAccountButtonState() {
+  const button = $('#accountBtn');
+  if (!button) return;
+  if (cloudUser?.email) {
+    button.textContent = cloudUser.email[0].toUpperCase();
+    button.setAttribute('aria-label', `Tu cuenta y sincronización en la nube (${cloudUser.email})`);
+  } else {
+    button.textContent = 'L';
+    button.setAttribute('aria-label', 'Tu cuenta y sincronización en la nube');
+  }
+}
+
+function renderAccountModalState() {
+  const { url, key } = getCloudCredentials();
+  const stepSetup = $('#accountStepSetup');
+  const stepAuth = $('#accountStepAuth');
+  const stepSession = $('#accountStepSession');
+  if (!stepSetup || !stepAuth || !stepSession) return;
+  if (!url || !key) {
+    stepSetup.hidden = false;
+    stepAuth.hidden = true;
+    stepSession.hidden = true;
+    const config = loadCloudConfig();
+    if ($('#accountSupabaseUrl')) $('#accountSupabaseUrl').value = config?.url || '';
+    if ($('#accountSupabaseKey')) $('#accountSupabaseKey').value = config?.key || '';
+    return;
+  }
+  if (!cloudUser) {
+    stepSetup.hidden = true;
+    stepAuth.hidden = false;
+    stepSession.hidden = true;
+    return;
+  }
+  stepSetup.hidden = true;
+  stepAuth.hidden = true;
+  stepSession.hidden = false;
+  if ($('#accountSessionEmail')) $('#accountSessionEmail').textContent = cloudUser.email || '—';
+  updateCloudQuotaLabel();
+}
+
+async function refreshCloudSession() {
+  if (!cloudClient) {
+    cloudUser = null;
+    setAccountButtonState();
+    return;
+  }
+  try {
+    const { data } = await cloudClient.auth.getSession();
+    cloudUser = data?.session?.user || null;
+  } catch {
+    cloudUser = null;
+  }
+  setAccountButtonState();
+}
+
+function openAccountModal() {
+  renderAccountModalState();
+  openModal('accountModal');
+}
+
+async function updateCloudQuotaLabel() {
+  const label = $('#accountQuotaLabel');
+  const bar = $('#accountQuotaBar');
+  if (!label || !bar || !cloudClient || !cloudUser) return;
+  try {
+    const { data, error } = await cloudClient.storage.from(cloudBucket).list(cloudUser.id, { limit: 1000 });
+    if (error) throw error;
+    const usedBytes = (data || []).reduce((sum, file) => sum + (file.metadata?.size || 0), 0);
+    const usedMb = usedBytes / (1024 * 1024);
+    const limitMb = 1024;
+    label.textContent = `${usedMb < 1 ? usedMb.toFixed(2) : usedMb.toFixed(0)} MB de ${limitMb} MB`;
+    bar.style.width = `${Math.min(100, (usedMb / limitMb) * 100)}%`;
+  } catch {
+    label.textContent = 'No se pudo calcular el espacio usado.';
+  }
+}
+
+// --- Subida (push): lo que pasa en este dispositivo viaja a la nube -----
+
+async function pushTrackMetadataToCloud(track, storagePathOverride) {
+  if (!cloudClient || !cloudUser || !track) return;
+  try {
+    await cloudClient.from('tracks').upsert({
+      id: track.id,
+      user_id: cloudUser.id,
+      title: track.title || '',
+      artist: track.artist || '',
+      album: track.album || '',
+      duration: track.duration || 0,
+      favorite: !!track.favorite,
+      played_at: track.playedAt || 0,
+      cover_data: track.coverData || null,
+      gradient: track.gradient || null,
+      storage_path: storagePathOverride || `${cloudUser.id}/${track.id}`,
+      created_at: track.createdAt || Date.now(),
+      updated_at: Date.now(),
+    }, { onConflict: 'user_id,id' });
+  } catch {
+    // Silencioso: si falla, se reintenta en la próxima sincronización manual.
+  }
+}
+
+async function pushTrackToCloud(track) {
+  if (!cloudClient || !cloudUser || !track?.blob) return;
+  try {
+    const storagePath = `${cloudUser.id}/${track.id}`;
+    const { error: uploadError } = await cloudClient.storage.from(cloudBucket).upload(storagePath, track.blob, {
+      upsert: true,
+      contentType: track.blob.type || 'application/octet-stream',
+    });
+    if (uploadError) throw uploadError;
+    await pushTrackMetadataToCloud(track, storagePath);
+  } catch {
+    // Silencioso: si falla la subida del audio, la canción se queda solo en
+    // local y se reintenta la próxima vez que se pulse "Sincronizar ahora".
+  }
+}
+
+async function pushTrackDeletionToCloud(trackId) {
+  if (!cloudClient || !cloudUser || !trackId) return;
+  try {
+    await cloudClient.from('tracks').delete().eq('user_id', cloudUser.id).eq('id', trackId);
+    await cloudClient.storage.from(cloudBucket).remove([`${cloudUser.id}/${trackId}`]);
+  } catch {
+    // Silencioso: como mucho queda un archivo huérfano en la nube.
+  }
+}
+
+function pushPlaylistsToCloud() {
+  if (!cloudClient || !cloudUser) return;
+  window.clearTimeout(playlistsSyncTimer);
+  playlistsSyncTimer = window.setTimeout(async () => {
+    try {
+      const rows = playlists.map((playlist) => ({
+        id: playlist.id,
+        user_id: cloudUser.id,
+        name: playlist.name || '',
+        color: playlist.color || 'aurora',
+        cover: playlist.cover || null,
+        track_ids: playlist.trackIds || [],
+        created_at: playlist.createdAt || Date.now(),
+        updated_at: Date.now(),
+      }));
+      if (rows.length) await cloudClient.from('playlists').upsert(rows, { onConflict: 'user_id,id' });
+    } catch {
+      // Silencioso: se reintenta en la próxima sincronización manual.
+    }
+  }, 1200);
+}
+
+// --- Bajada (pull): lo que hay en la nube y falta aquí se trae ----------
+
+async function syncNow() {
+  if (!cloudClient || !cloudUser) return;
+  if (cloudSyncing) return;
+  cloudSyncing = true;
+  const statusEl = $('#accountSyncStatus');
+  if (statusEl) statusEl.textContent = 'Sincronizando…';
+  try {
+    for (const track of tracks) await pushTrackMetadataToCloud(track);
+    pushPlaylistsToCloud();
+
+    const { data: remoteTracks, error: tracksError } = await cloudClient
+      .from('tracks').select('*').eq('user_id', cloudUser.id);
+    if (tracksError) throw tracksError;
+    const localTrackIds = new Set(tracks.map((track) => track.id));
+    let importedCount = 0;
+    for (const row of remoteTracks || []) {
+      if (localTrackIds.has(row.id)) continue;
+      try {
+        const { data: blob, error: downloadError } = await cloudClient.storage
+          .from(cloudBucket).download(row.storage_path || `${cloudUser.id}/${row.id}`);
+        if (downloadError) throw downloadError;
+        const track = {
+          id: row.id,
+          title: row.title || '',
+          artist: row.artist || '',
+          album: row.album || '',
+          blob,
+          url: URL.createObjectURL(blob),
+          duration: row.duration || 0,
+          favorite: row.favorite || false,
+          playedAt: row.played_at || 0,
+          gradient: row.gradient || gradientFor(tracks.length),
+          coverData: row.cover_data || '',
+          createdAt: row.created_at || Date.now(),
+        };
+        await saveTrackToLibrary(track);
+        tracks.push(track);
+        localTrackIds.add(track.id);
+        importedCount += 1;
+      } catch {
+        // Si una canción concreta falla al bajar, seguimos con las demás.
+      }
+    }
+
+    const { data: remotePlaylists, error: playlistsError } = await cloudClient
+      .from('playlists').select('*').eq('user_id', cloudUser.id);
+    if (playlistsError) throw playlistsError;
+    const localPlaylistIds = new Set(playlists.map((playlist) => playlist.id));
+    for (const row of remotePlaylists || []) {
+      if (localPlaylistIds.has(row.id)) continue;
+      playlists.push({
+        id: row.id,
+        name: row.name || '',
+        color: row.color || 'aurora',
+        cover: row.cover || '',
+        trackIds: Array.isArray(row.track_ids) ? row.track_ids : [],
+      });
+    }
+
+    saveQueue();
+    localStorage.setItem(playlistStorageKey, JSON.stringify(playlists));
+    renderTracks();
+    renderPlaylists();
+    if (statusEl) {
+      statusEl.textContent = importedCount
+        ? `Sincronizado · ${importedCount} ${importedCount === 1 ? 'canción nueva traída' : 'canciones nuevas traídas'}.`
+        : 'Sincronizado · todo al día.';
+    }
+    updateCloudQuotaLabel();
+    showToast('Biblioteca sincronizada con la nube.');
+  } catch {
+    if (statusEl) statusEl.textContent = 'No se pudo sincronizar. Revisa tu conexión o tu configuración de Supabase.';
+    showToast('No se pudo sincronizar con la nube.');
+  } finally {
+    cloudSyncing = false;
   }
 }
 
@@ -803,6 +1097,7 @@ async function deleteTrack(index) {
     showToast('No se pudo borrar la canción de la biblioteca.');
     return;
   }
+  pushTrackDeletionToCloud(track.id);
   const wasCurrent = currentIndex === index;
   if (wasCurrent) {
     audio.pause();
@@ -839,6 +1134,7 @@ async function importFiles(files) {
       tracks.push(track);
       queueIds.push(track.id);
       importedTracks.push(track);
+      pushTrackToCloud(track);
     } catch {
       URL.revokeObjectURL(track.url);
       showToast('No hay espacio suficiente para guardar esta canción en la app.');
@@ -846,7 +1142,7 @@ async function importFiles(files) {
     const probe = document.createElement('video');
     probe.preload = 'metadata';
     probe.src = track.url;
-    probe.addEventListener('loadedmetadata', () => { track.duration = probe.duration; saveTrackToLibrary(track).catch(() => {}); renderTracks(); });
+    probe.addEventListener('loadedmetadata', () => { track.duration = probe.duration; saveTrackToLibrary(track).catch(() => {}); pushTrackMetadataToCloud(track); renderTracks(); });
   }
   saveQueue();
   renderTracks();
@@ -1147,6 +1443,97 @@ $('#queueList').addEventListener('click', (event) => {
 $('#pickerNewPlaylistBtn').addEventListener('click', () => openCreatePlaylistModal('picker'));
 $('#managerNewPlaylistBtn').addEventListener('click', () => { closeModal('playlistManagerModal'); openCreatePlaylistModal(); });
 
+// --- Nube y sincronización: cableado del modal de cuenta -----------------
+$('#accountBtn')?.addEventListener('click', openAccountModal);
+
+$('#accountSaveConfigBtn')?.addEventListener('click', () => {
+  const url = $('#accountSupabaseUrl').value.trim();
+  const key = $('#accountSupabaseKey').value.trim();
+  if (!url || !key) {
+    $('#accountSetupHelp').textContent = 'Rellena la URL y la clave "anon public" para continuar.';
+    return;
+  }
+  saveCloudConfig({ url, key });
+  initCloudClient();
+  refreshCloudSession().then(renderAccountModalState);
+});
+
+$('#accountReconfigureBtn')?.addEventListener('click', () => {
+  clearCloudConfig();
+  cloudClient = null;
+  cloudUser = null;
+  setAccountButtonState();
+  // Fuerza el formulario de configuración manual aunque la app traiga un
+  // backend integrado de fábrica: es la vía para apuntar a otro proyecto.
+  $('#accountStepSetup').hidden = false;
+  $('#accountStepAuth').hidden = true;
+  $('#accountStepSession').hidden = true;
+  $('#accountSupabaseUrl').value = '';
+  $('#accountSupabaseKey').value = '';
+  $('#accountSetupHelp').textContent = 'Esta clave es pública por diseño: solo funciona junto con tu sesión, no da acceso a nada por sí sola.';
+});
+
+$('#accountSignUpBtn')?.addEventListener('click', async () => {
+  if (!cloudClient) return;
+  const email = $('#accountEmail').value.trim();
+  const password = $('#accountPassword').value;
+  const helpEl = $('#accountAuthHelp');
+  if (!email || password.length < 6) {
+    helpEl.textContent = 'Escribe un correo válido y una contraseña de al menos 6 caracteres.';
+    return;
+  }
+  helpEl.textContent = 'Creando cuenta…';
+  try {
+    const { data, error } = await cloudClient.auth.signUp({ email, password });
+    if (error) throw error;
+    if (data?.session) {
+      cloudUser = data.session.user;
+      setAccountButtonState();
+      renderAccountModalState();
+      showToast('Cuenta creada. Sincronizando…');
+      syncNow();
+    } else {
+      helpEl.textContent = 'Cuenta creada · revisa tu correo para confirmarla y luego inicia sesión aquí.';
+    }
+  } catch (error) {
+    helpEl.textContent = error?.message === 'User already registered'
+      ? 'Ese correo ya tiene una cuenta · inicia sesión abajo.'
+      : 'No se pudo crear la cuenta. Comprueba tus datos e inténtalo de nuevo.';
+  }
+});
+
+$('#accountSignInBtn')?.addEventListener('click', async () => {
+  if (!cloudClient) return;
+  const email = $('#accountEmail').value.trim();
+  const password = $('#accountPassword').value;
+  const helpEl = $('#accountAuthHelp');
+  if (!email || !password) {
+    helpEl.textContent = 'Escribe tu correo y tu contraseña.';
+    return;
+  }
+  helpEl.textContent = 'Iniciando sesión…';
+  try {
+    const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    cloudUser = data.session.user;
+    setAccountButtonState();
+    renderAccountModalState();
+    showToast(`Sesión iniciada como ${cloudUser.email}.`);
+    syncNow();
+  } catch {
+    helpEl.textContent = 'No se pudo iniciar sesión. Revisa el correo y la contraseña.';
+  }
+});
+
+$('#accountSignOutBtn')?.addEventListener('click', async () => {
+  if (cloudClient) { try { await cloudClient.auth.signOut(); } catch { /* se limpia igual localmente */ } }
+  cloudUser = null;
+  setAccountButtonState();
+  renderAccountModalState();
+});
+
+$('#accountSyncNowBtn')?.addEventListener('click', () => syncNow());
+
 const savedTheme = JSON.parse(localStorage.getItem('cieloplay-theme') || 'null');
 loadTheme(savedTheme?.name || 'clear', savedTheme?.accent || undefined);
 setInterval(() => { if (selectedThemeName === 'realtime') loadTheme('realtime', selectedAccent || undefined); }, 60000);
@@ -1163,4 +1550,12 @@ if ('serviceWorker' in navigator && ['http:', 'https:'].includes(location.protoc
 loadStoredTracks().then(() => {
   renderTracks();
   if (tracks.length && currentIndex < 0) selectTrack(0, false);
+  // La nube se activa después de tener la biblioteca local cargada, para
+  // que "tracks" no se pise a medio camino entre el pull de la nube y la
+  // carga desde IndexedDB.
+  if (initCloudClient()) {
+    refreshCloudSession().then(() => { if (cloudUser) syncNow(); });
+  } else {
+    setAccountButtonState();
+  }
 });
