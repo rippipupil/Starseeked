@@ -1,0 +1,50 @@
+name: Generar y publicar la app de Windows de starseeked
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Compilar instalador de Windows
+    runs-on: windows-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm install
+
+      # electron-builder empaqueta la propia web (index.html/app.js/styles.css)
+      # dentro de una ventana de Electron y genera un instalador .exe (NSIS)
+      # con su propio icono, acceso directo de escritorio y entrada en el
+      # menú de inicio — la misma app que la web y el APK, pero para Windows.
+      - name: Generar el instalador de Windows
+        run: npx electron-builder --win --publish never
+
+      - name: Guardar el instalador como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: starseeked-windows
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publicar el instalador descargable en Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="win-${{ github.run_number }}"
+          INSTALLER=$(ls dist/*.exe | head -n 1)
+          cp "$INSTALLER" starseeked-windows-setup.exe
+          gh release create "$TAG" starseeked-windows-setup.exe --target "${{ github.sha }}" --title "starseeked Windows $TAG" --notes "Instalador de Windows generado automáticamente desde la rama main. Descárgalo y ejecútalo para instalar starseeked en tu PC."
