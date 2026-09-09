@@ -622,7 +622,10 @@ function deleteTrackFromLibrary(trackId) {
 function persistTrackState(track) {
   if (!track) return;
   saveTrackToLibrary(track).catch(() => {});
-  pushTrackMetadataToCloud(track);
+  // Si el audio de esta canción todavía no se subió nunca a la nube, se
+  // sube entero ahora; si ya estaba subido, basta con refrescar sus datos.
+  if (track.cloudSynced) pushTrackMetadataToCloud(track);
+  else pushTrackToCloud(track);
 }
 
 async function loadStoredTracks() {
@@ -824,7 +827,11 @@ async function pushTrackToCloud(track) {
       contentType: track.blob.type || 'application/octet-stream',
     });
     if (uploadError) throw uploadError;
+    // Se marca como ya subida para no reenviar el audio entero en cada
+    // sincronización futura; solo se reenviarán sus metadatos si cambian.
+    track.cloudSynced = true;
     await pushTrackMetadataToCloud(track, storagePath);
+    saveTrackToLibrary(track).catch(() => {});
   } catch {
     // Silencioso: si falla la subida del audio, la canción se queda solo en
     // local y se reintenta la próxima vez que se pulse "Sincronizar ahora".
@@ -863,6 +870,28 @@ function pushPlaylistsToCloud() {
   }, 1200);
 }
 
+// El tema elegido y los "cielos" personalizados también viajan a la nube,
+// para que al abrir la app en otro dispositivo se vea el mismo aspecto.
+let settingsSyncTimer = null;
+function pushSettingsToCloud() {
+  if (!cloudClient || !cloudUser) return;
+  window.clearTimeout(settingsSyncTimer);
+  settingsSyncTimer = window.setTimeout(async () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('cieloplay-theme') || 'null') || {};
+      await cloudClient.from('settings').upsert({
+        user_id: cloudUser.id,
+        theme_name: stored.name || selectedThemeName || 'clear',
+        theme_accent: stored.accent || selectedAccent || null,
+        custom_themes: customThemes,
+        updated_at: stored.updatedAt || Date.now(),
+      }, { onConflict: 'user_id' });
+    } catch {
+      // Silencioso: se reintenta en la próxima sincronización manual.
+    }
+  }, 1200);
+}
+
 // --- Bajada (pull): lo que hay en la nube y falta aquí se trae ----------
 
 async function syncNow() {
@@ -873,8 +902,18 @@ async function syncNow() {
   if (statusEl) statusEl.textContent = 'Sincronizando…';
   try {
     await withTimeout((async () => {
-      for (const track of tracks) await pushTrackMetadataToCloud(track);
+      // Las canciones que aún no tengan su audio subido a la nube (por
+      // ejemplo, las que ya existían antes de configurar la cuenta) se
+      // suben enteras aquí; las que ya estaban subidas solo refrescan sus
+      // datos. Antes esta línea solo mandaba los datos y nunca el audio,
+      // así que una canción del PC nunca llegaba a existir de verdad en la
+      // nube y el móvil no tenía nada real que descargar.
+      for (const track of tracks) {
+        if (track.cloudSynced) await pushTrackMetadataToCloud(track);
+        else await pushTrackToCloud(track);
+      }
       pushPlaylistsToCloud();
+      pushSettingsToCloud();
 
       const { data: remoteTracks, error: tracksError } = await cloudClient
         .from('tracks').select('*').eq('user_id', cloudUser.id);
@@ -902,6 +941,7 @@ async function syncNow() {
             gradient: row.gradient || gradientFor(tracks.length),
             coverData: row.cover_data || '',
             createdAt: row.created_at || Date.now(),
+            cloudSynced: true,
           };
           await saveTrackToLibrary(track);
           tracks.push(track);
@@ -925,6 +965,36 @@ async function syncNow() {
           cover: row.cover || '',
           trackIds: Array.isArray(row.track_ids) ? row.track_ids : [],
         });
+      }
+
+      // El tema y los cielos personalizados se traen solo si lo guardado en
+      // la nube es más reciente que lo que ya hay en este dispositivo, para
+      // que dos aparatos cambiando de tema por su cuenta no se pisen entre
+      // sí: siempre gana el cambio más nuevo.
+      try {
+        const { data: remoteSettings, error: settingsError } = await cloudClient
+          .from('settings').select('*').eq('user_id', cloudUser.id).maybeSingle();
+        if (settingsError) throw settingsError;
+        if (remoteSettings) {
+          const localTheme = JSON.parse(localStorage.getItem('cieloplay-theme') || 'null') || {};
+          if ((remoteSettings.updated_at || 0) > (localTheme.updatedAt || 0)) {
+            if (Array.isArray(remoteSettings.custom_themes)) {
+              const localCustomIds = new Set(customThemes.map((theme) => theme.id));
+              remoteSettings.custom_themes.forEach((theme) => {
+                if (!localCustomIds.has(theme.id)) customThemes.push(theme);
+              });
+              localStorage.setItem(customThemeStorageKey, JSON.stringify(customThemes));
+            }
+            loadTheme(remoteSettings.theme_name || 'clear', remoteSettings.theme_accent || undefined);
+            localStorage.setItem('cieloplay-theme', JSON.stringify({
+              name: remoteSettings.theme_name || 'clear',
+              accent: remoteSettings.theme_accent || null,
+              updatedAt: remoteSettings.updated_at || Date.now(),
+            }));
+          }
+        }
+      } catch {
+        // Silencioso: se reintenta en la próxima sincronización manual.
       }
 
       saveQueue();
@@ -1057,11 +1127,12 @@ function loadTheme(themeName, customAccent) {
   $$('.theme-option').forEach((button) => button.classList.toggle('active', button.dataset.theme === themeName));
   $$('.mood-item').forEach((button) => button.classList.toggle('selected', button.dataset.theme === resolvedThemeName));
   renderCustomThemes();
-  localStorage.setItem('cieloplay-theme', JSON.stringify({ name: themeName, accent: customAccent || null }));
+  localStorage.setItem('cieloplay-theme', JSON.stringify({ name: themeName, accent: customAccent || null, updatedAt: Date.now() }));
   document.querySelector('meta[name="theme-color"]').setAttribute('content', theme.sky);
   // La portada de repuesto de la notificación usa los colores del tema, así
   // que si cambias de cielo mientras suena algo, la refrescamos al momento.
   updateMediaSession();
+  pushSettingsToCloud();
 }
 
 function openDrawer() { $('#themeDrawer').classList.add('open'); $('#themeDrawer').setAttribute('aria-hidden', 'false'); }
