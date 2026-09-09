@@ -1,4 +1,4 @@
-const CACHE_NAME = 'starseeked-shell-v5';
+const CACHE_NAME = 'starseeked-shell-v6';
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,11 +18,20 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Antes esto era "cache-first": si un archivo ya estaba guardado, se
+// servía siempre esa copia y nunca se volvía a comprobar si había una
+// versión nueva en el servidor, así que una actualización de la app podía
+// quedarse invisible indefinidamente en un dispositivo que ya la hubiera
+// abierto antes. Ahora se intenta primero la red (para tener siempre el
+// código más reciente) y solo se usa la copia guardada si no hay
+// conexión, para que la app se pueda seguir abriendo sin internet.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-    const copy = response.clone();
-    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-    return response;
-  })));
+  event.respondWith(
+    fetch(event.request).then((response) => {
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+      return response;
+    }).catch(() => caches.match(event.request))
+  );
 });
