@@ -669,10 +669,11 @@ body.reduced-motion * { animation-duration: .01ms !important; animation-iteratio
   .brand span:not(.brand-mark) { font-size: 18px; }
   .header-actions .android-download-button { display: none; }
   .header-actions .icon-button.notification-button { display: none; }
-  /* En un móvil sin cuentas ni inicio de sesión real, el avatar solo confunde
-     ("¿tengo una cuenta?") y la lupa ya no tenía ni el input visible desde el
-     breakpoint de 1100px (solo el icono, sin acción) — fuera ambas. */
-  .header-actions .search-box, .header-actions .avatar-button { display: none; }
+  /* La lupa ya no tenía ni el input visible desde el breakpoint de 1100px
+     (solo el icono, sin acción) — fuera. El avatar SÍ se queda: ahora es el
+     acceso real a la cuenta y la sincronización en la nube, así que tiene
+     que verse también en el móvil en vertical (el caso más habitual). */
+  .header-actions .search-box { display: none; }
   .sky-status-text { display: none; }
   .hero-card { min-height: 330px; }
   .hero-copy { width: 88%; padding: 25px 0 24px 22px; }
