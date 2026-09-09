@@ -800,6 +800,18 @@ async function updateCloudQuotaLabel() {
   }
 }
 
+// El nombre real del archivo (con espacios, corchetes, tildes, etc.) sirve
+// para mostrarlo en la app, pero Supabase Storage rechaza esos caracteres
+// en la RUTA donde se guarda el audio ("Invalid key"). Esta función genera
+// una versión segura solo para esa ruta interna — el título que ve la
+// persona nunca cambia, esto es invisible para ella.
+function sanitizeStorageKey(value) {
+  return String(value)
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .slice(0, 200);
+}
+
 // --- Subida (push): lo que pasa en este dispositivo viaja a la nube -----
 
 async function pushTrackMetadataToCloud(track, storagePathOverride) {
@@ -816,7 +828,7 @@ async function pushTrackMetadataToCloud(track, storagePathOverride) {
       played_at: track.playedAt || 0,
       cover_data: track.coverData || null,
       gradient: track.gradient || null,
-      storage_path: storagePathOverride || `${cloudUser.id}/${track.id}`,
+      storage_path: storagePathOverride || `${cloudUser.id}/${sanitizeStorageKey(track.id)}`,
       created_at: track.createdAt || Date.now(),
       updated_at: Date.now(),
     }, { onConflict: 'user_id,id' });
@@ -828,7 +840,7 @@ async function pushTrackMetadataToCloud(track, storagePathOverride) {
 async function pushTrackToCloud(track) {
   if (!cloudClient || !cloudUser || !track?.blob) return { ok: false, error: new Error('Sin sesión o sin audio que subir.') };
   try {
-    const storagePath = `${cloudUser.id}/${track.id}`;
+    const storagePath = `${cloudUser.id}/${sanitizeStorageKey(track.id)}`;
     const { error: uploadError } = await withTimeout(
       cloudClient.storage.from(cloudBucket).upload(storagePath, track.blob, {
         upsert: true,
@@ -858,7 +870,7 @@ async function pushTrackDeletionToCloud(trackId) {
   if (!cloudClient || !cloudUser || !trackId) return;
   try {
     await cloudClient.from('tracks').delete().eq('user_id', cloudUser.id).eq('id', trackId);
-    await cloudClient.storage.from(cloudBucket).remove([`${cloudUser.id}/${trackId}`]);
+    await cloudClient.storage.from(cloudBucket).remove([`${cloudUser.id}/${sanitizeStorageKey(trackId)}`]);
   } catch {
     // Silencioso: como mucho queda un archivo huérfano en la nube.
   }
@@ -951,7 +963,7 @@ async function syncNow() {
         if (localTrackIds.has(row.id)) continue;
         try {
           const { data: blob, error: downloadError } = await withTimeout(
-            cloudClient.storage.from(cloudBucket).download(row.storage_path || `${cloudUser.id}/${row.id}`),
+            cloudClient.storage.from(cloudBucket).download(row.storage_path || `${cloudUser.id}/${sanitizeStorageKey(row.id)}`),
             60000,
             'Descarga de audio demasiado lenta.',
           );
