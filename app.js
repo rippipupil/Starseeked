@@ -819,22 +819,31 @@ async function pushTrackMetadataToCloud(track, storagePathOverride) {
 }
 
 async function pushTrackToCloud(track) {
-  if (!cloudClient || !cloudUser || !track?.blob) return;
+  if (!cloudClient || !cloudUser || !track?.blob) return { ok: false, error: new Error('Sin sesión o sin audio que subir.') };
   try {
     const storagePath = `${cloudUser.id}/${track.id}`;
-    const { error: uploadError } = await cloudClient.storage.from(cloudBucket).upload(storagePath, track.blob, {
-      upsert: true,
-      contentType: track.blob.type || 'application/octet-stream',
-    });
+    const { error: uploadError } = await withTimeout(
+      cloudClient.storage.from(cloudBucket).upload(storagePath, track.blob, {
+        upsert: true,
+        contentType: track.blob.type || 'application/octet-stream',
+      }),
+      120000,
+      'Subida de audio demasiado lenta.',
+    );
     if (uploadError) throw uploadError;
     // Se marca como ya subida para no reenviar el audio entero en cada
     // sincronización futura; solo se reenviarán sus metadatos si cambian.
     track.cloudSynced = true;
     await pushTrackMetadataToCloud(track, storagePath);
     saveTrackToLibrary(track).catch(() => {});
-  } catch {
-    // Silencioso: si falla la subida del audio, la canción se queda solo en
-    // local y se reintenta la próxima vez que se pulse "Sincronizar ahora".
+    return { ok: true };
+  } catch (error) {
+    // Antes este error se tragaba en silencio y no había forma de saber
+    // por qué una canción nunca llegaba a la nube. Ahora queda en la
+    // consola del navegador (F12 → Consola) y se cuenta en el resumen de
+    // "Sincronizar ahora", para poder diagnosticarlo de verdad.
+    console.error('[starseeked] no se pudo subir el audio a la nube:', track?.title, error);
+    return { ok: false, error };
   }
 }
 
@@ -908,9 +917,18 @@ async function syncNow() {
       // datos. Antes esta línea solo mandaba los datos y nunca el audio,
       // así que una canción del PC nunca llegaba a existir de verdad en la
       // nube y el móvil no tenía nada real que descargar.
+      let uploadFailCount = 0;
+      let lastUploadError = '';
       for (const track of tracks) {
-        if (track.cloudSynced) await pushTrackMetadataToCloud(track);
-        else await pushTrackToCloud(track);
+        if (track.cloudSynced) {
+          await pushTrackMetadataToCloud(track);
+        } else {
+          const result = await pushTrackToCloud(track);
+          if (!result?.ok) {
+            uploadFailCount += 1;
+            lastUploadError = result?.error?.message || lastUploadError;
+          }
+        }
       }
       pushPlaylistsToCloud();
       pushSettingsToCloud();
@@ -920,12 +938,15 @@ async function syncNow() {
       if (tracksError) throw tracksError;
       const localTrackIds = new Set(tracks.map((track) => track.id));
       let importedCount = 0;
+      let downloadFailCount = 0;
+      let lastDownloadError = '';
       for (const row of remoteTracks || []) {
         if (localTrackIds.has(row.id)) continue;
         try {
           const { data: blob, error: downloadError } = await withTimeout(
             cloudClient.storage.from(cloudBucket).download(row.storage_path || `${cloudUser.id}/${row.id}`),
-            20000,
+            60000,
+            'Descarga de audio demasiado lenta.',
           );
           if (downloadError) throw downloadError;
           const track = {
@@ -947,8 +968,13 @@ async function syncNow() {
           tracks.push(track);
           localTrackIds.add(track.id);
           importedCount += 1;
-        } catch {
-          // Si una canción concreta falla al bajar, seguimos con las demás.
+        } catch (error) {
+          // Antes este error también se tragaba en silencio. Ahora queda en
+          // la consola y se cuenta en el resumen, para saber si el problema
+          // está en la subida (PC) o en la bajada (móvil).
+          downloadFailCount += 1;
+          lastDownloadError = error?.message || lastDownloadError;
+          console.error('[starseeked] no se pudo bajar una canción de la nube:', row?.title, error);
         }
       }
 
@@ -1002,13 +1028,19 @@ async function syncNow() {
       renderTracks();
       renderPlaylists();
       if (statusEl) {
-        statusEl.textContent = importedCount
-          ? `Sincronizado · ${importedCount} ${importedCount === 1 ? 'canción nueva traída' : 'canciones nuevas traídas'}.`
-          : 'Sincronizado · todo al día.';
+        const parts = [importedCount
+          ? `${importedCount} ${importedCount === 1 ? 'canción nueva traída' : 'canciones nuevas traídas'}`
+          : 'todo al día'];
+        if (uploadFailCount) parts.push(`${uploadFailCount} ${uploadFailCount === 1 ? 'canción no se pudo subir' : 'canciones no se pudieron subir'}`);
+        if (downloadFailCount) parts.push(`${downloadFailCount} ${downloadFailCount === 1 ? 'canción no se pudo bajar' : 'canciones no se pudieron bajar'}`);
+        let message = `Sincronizado · ${parts.join(' · ')}.`;
+        const firstError = lastUploadError || lastDownloadError;
+        if ((uploadFailCount || downloadFailCount) && firstError) message += ` Motivo: ${firstError}`;
+        statusEl.textContent = message;
       }
       updateCloudQuotaLabel();
-      showToast('Biblioteca sincronizada con la nube.');
-    })(), 30000, 'La sincronización está tardando demasiado.');
+      showToast(uploadFailCount || downloadFailCount ? 'Sincronización terminada con algún fallo (ver detalle abajo).' : 'Biblioteca sincronizada con la nube.');
+    })(), 300000, 'La sincronización está tardando demasiado.');
   } catch (error) {
     if (statusEl) {
       statusEl.textContent = error?.message === 'La sincronización está tardando demasiado.'
