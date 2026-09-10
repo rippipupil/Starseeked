@@ -195,33 +195,36 @@ function updateMediaSession() {
 }
 
 function updateMediaSessionPosition() {
-  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  const duration = playerDuration();
+  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState || !Number.isFinite(duration) || duration <= 0) return;
   try {
-    navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate || 1, position: Math.min(audio.currentTime, audio.duration) });
+    navigator.mediaSession.setPositionState({ duration, playbackRate: usingNativePlayback ? 1 : (audio.playbackRate || 1), position: Math.min(playerCurrentTime(), duration) });
   } catch {
     // Algunos navegadores móviles todavía no aceptan todos los estados de posición.
   }
 }
 
 function seekBy(seconds) {
-  if (!Number.isFinite(audio.duration)) return;
-  audio.currentTime = Math.min(audio.duration, Math.max(0, audio.currentTime + seconds));
+  const duration = playerDuration();
+  if (!Number.isFinite(duration)) return;
+  playerSetCurrentTime(Math.min(duration, Math.max(0, playerCurrentTime() + seconds)));
   updateMediaSessionPosition();
 }
 
 function setupMediaSession() {
   if (!('mediaSession' in navigator)) return;
   const actions = {
-    play: () => audio.play(),
-    pause: () => audio.pause(),
-    stop: () => { audio.pause(); audio.currentTime = 0; },
+    play: () => playerPlay(),
+    pause: () => playerPause(),
+    stop: () => { playerPause(); playerSetCurrentTime(0); },
     previoustrack: playPrevious,
     nexttrack: playNext,
     seekbackward: () => seekBy(-10),
     seekforward: () => seekBy(10),
     seekto: (details) => {
-      if (!Number.isFinite(audio.duration) || !Number.isFinite(details.seekTime)) return;
-      audio.currentTime = details.seekTime;
+      const duration = playerDuration();
+      if (!Number.isFinite(duration) || !Number.isFinite(details.seekTime)) return;
+      playerSetCurrentTime(details.seekTime);
       updateMediaSessionPosition();
     }
   };
@@ -257,6 +260,167 @@ const nativeMedia = (() => {
   return null;
 })();
 
+/* =========================================================
+   Reproductor: capa de abstracción nativo/web
+   =========================================================
+   Investigación a fondo (WebView de Chromium, código fuente de Capacitor,
+   foros de Ionic, y otros reproductores de música empaquetados) confirmó
+   la causa real de que las canciones se cortaran tras un rato con la
+   pantalla apagada: en Android, el audio de esta app sonaba a través de un
+   elemento <video> dentro del WebView, y ese elemento tiene su superficie
+   de vídeo (el "Surface" donde Android decodifica el archivo) ligada al
+   ciclo de vida de la pantalla — Android la destruye al apagar la
+   pantalla o poner la app en segundo plano largo rato, y con ella se
+   corta la reproducción. Ni los permisos ni el "wake lock" ni un servicio
+   en primer plano arreglan esto, porque ninguno de ellos toca esa
+   superficie: el propio elemento que reproduce el sonido es el problema.
+   La única solución con precedente real en apps de música publicadas es
+   sacar la reproducción de verdad del WebView por completo y ponerla en
+   un MediaPlayer nativo de Android, dentro del servicio en primer plano
+   que ya existía para la notificación — así el audio ya no depende en
+   absoluto de que la página web esté "despierta" ni de su Surface.
+   Esta capa oculta esa diferencia: el resto de la app llama siempre a
+   player*() y, por debajo, o bien manda la orden al MediaPlayer nativo
+   (usingNativePlayback = true) o bien usa el elemento <video> de toda la
+   vida (versión web/PWA/Electron, sin cambios de comportamiento). Si el
+   audio no se puede cargar en el reproductor nativo por lo que sea (poca
+   memoria, un archivo corrupto...) se cae automáticamente al elemento
+   <video> para esa canción, así nunca se deja a la persona sin sonido. */
+let usingNativePlayback = false;
+let currentVolume = .8;
+let nativePlayerState = { paused: true, currentTime: 0, duration: 0 };
+
+function playerIsPaused() { return usingNativePlayback ? nativePlayerState.paused : audio.paused; }
+function playerCurrentTime() { return usingNativePlayback ? nativePlayerState.currentTime : audio.currentTime; }
+function playerDuration() { return usingNativePlayback ? nativePlayerState.duration : audio.duration; }
+
+function playerPlay() {
+  if (usingNativePlayback) {
+    nativePlayerState.paused = false;
+    return nativeMedia.play()
+      .then(() => handlePlay())
+      .catch((error) => { console.error('[starseeked] no se pudo reproducir en el reproductor nativo', error); showToast('Pulsa reproducir para comenzar la canción.'); });
+  }
+  return audio.play().catch(() => showToast('Pulsa reproducir para comenzar la canción.'));
+}
+
+function playerPause() {
+  if (usingNativePlayback) {
+    nativePlayerState.paused = true;
+    nativeMedia.pause().then(() => handlePause()).catch((error) => console.error('[starseeked] no se pudo pausar el reproductor nativo', error));
+    return;
+  }
+  audio.pause();
+}
+
+function playerSetCurrentTime(seconds) {
+  if (usingNativePlayback) {
+    nativePlayerState.currentTime = seconds;
+    nativeMedia.seekTo({ position: seconds }).catch((error) => console.error('[starseeked] no se pudo mover la posición de reproducción', error));
+    // Actualiza la barra de progreso al momento (sin esperar al siguiente
+    // aviso de progreso del reproductor nativo, que puede tardar hasta 1 s),
+    // para que arrastrar el progreso o saltar ±10 s se sienta igual de
+    // instantáneo que en la versión web.
+    handleTimeUpdate();
+    return;
+  }
+  audio.currentTime = seconds;
+}
+
+function playerSetVolume(volume) {
+  currentVolume = volume;
+  audio.volume = volume;
+  if (usingNativePlayback) nativeMedia.setVolume({ volume }).catch((error) => console.error('[starseeked] no se pudo cambiar el volumen', error));
+}
+
+function playerUnload() {
+  usingNativePlayback = false;
+  nativePlayerState = { paused: true, currentTime: 0, duration: 0 };
+  if (nativeMedia) nativeMedia.stopPlayback().catch(() => {});
+  audio.pause();
+  audio.removeAttribute('src');
+  audio.load();
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => resolve(reader.result));
+    reader.addEventListener('error', () => reject(reader.error));
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Carga (y, si toca, arranca) una canción. En Android nativo, el audio de
+// verdad viaja entero al MediaPlayer del servicio en primer plano (por
+// eso hay que convertirlo a base64 primero) y a partir de ahí ya no
+// depende para nada del WebView. Si algo falla por el camino, se recurre
+// al elemento <video> de siempre para que la canción suene igualmente.
+async function playerLoadTrack(track, autoplay) {
+  if (nativeMedia) {
+    usingNativePlayback = true;
+    nativePlayerState = { paused: !autoplay, currentTime: 0, duration: 0 };
+    try {
+      const audioBase64 = await blobToBase64(track.blob);
+      const result = await nativeMedia.loadTrack({
+        audio: audioBase64,
+        title: track.title || 'starseeked',
+        artist: track.artist || '',
+        album: track.album || '',
+        artwork: track.coverData || '',
+        autoplay,
+        volume: currentVolume
+      });
+      nativePlayerState.duration = Number(result && result.duration) || 0;
+      handleLoadedMetadata();
+      if (autoplay) handlePlay(); else { updatePlayButton(); renderTracks(); }
+      return;
+    } catch (error) {
+      console.error('[starseeked] no se pudo cargar la canción en el reproductor nativo; se usa el reproductor web como respaldo', error);
+      usingNativePlayback = false;
+    }
+  }
+  usingNativePlayback = false;
+  audio.src = track.url;
+  if (autoplay) audio.play().catch(() => showToast('Pulsa reproducir para comenzar la canción.'));
+}
+
+// --- Manejadores compartidos de eventos de reproducción -----------------
+// Tanto el elemento <video> (web/PWA/respaldo) como el reproductor nativo
+// (Android, evento a evento por el puente) acaban llamando a estas mismas
+// funciones, para que el resto de la app (favoritos escuchados, la barra
+// de progreso, el botón de play...) se comporte igual sin importar cuál
+// de los dos está sonando de verdad.
+function handleLoadedMetadata() {
+  $('#totalTime').textContent = formatTime(playerDuration());
+  updateMediaSessionPosition();
+}
+
+function handleTimeUpdate() {
+  const duration = playerDuration();
+  const progress = duration ? (playerCurrentTime() / duration) * 100 : 0;
+  $('#progressRange').value = progress;
+  $('#currentTime').textContent = formatTime(playerCurrentTime());
+  updateMediaSessionPosition();
+}
+
+function handlePlay() {
+  if (tracks[currentIndex]) { tracks[currentIndex].playedAt = Date.now(); persistTrackState(tracks[currentIndex]); }
+  updateMediaSession();
+  updatePlayButton();
+  renderTracks();
+}
+
+function handlePause() {
+  updatePlayButton();
+  renderTracks();
+}
+
+function handleEnded() {
+  if (isRepeat) { playerSetCurrentTime(0); playerPlay(); }
+  else playNext();
+}
+
 function pushNativeMediaMetadata() {
   if (!nativeMedia || currentIndex < 0 || !tracks[currentIndex]) return;
   const track = tracks[currentIndex];
@@ -268,18 +432,6 @@ function pushNativeMediaMetadata() {
       artwork: track.coverData || ''
     })
     .catch((error) => console.error('[starseeked] no se pudo actualizar los datos de la notificación', error));
-}
-
-function pushNativeMediaPlaybackState() {
-  if (!nativeMedia) return;
-  const isPlaying = !audio.paused && currentIndex >= 0;
-  nativeMedia
-    .updatePlaybackState({
-      playing: isPlaying,
-      position: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
-      duration: Number.isFinite(audio.duration) ? audio.duration : 0
-    })
-    .catch((error) => console.error('[starseeked] no se pudo actualizar el estado de la notificación', error));
 }
 
 function setupNativeMediaBridge() {
@@ -302,17 +454,47 @@ function setupNativeMediaBridge() {
       }
     })
     .catch((error) => console.error('[starseeked] no se pudo pedir el permiso de notificaciones', error));
+  // "Reproducir"/"pausar"/"parar"/"saltar 10 s" ahora los gestiona el
+  // propio servicio nativo directamente sobre su MediaPlayer (no necesita
+  // ir y volver a esta página, que Android puede tener suspendida) — solo
+  // "anterior"/"siguiente" siguen pasando por aquí, porque son los únicos
+  // que dependen del orden de la cola (aleatorio, repetir), que solo
+  // conoce esta página web.
   nativeMedia.addListener('controlAction', (data) => {
     const action = data && data.action;
     switch (action) {
-      case 'play': audio.play().catch(() => {}); break;
-      case 'pause': audio.pause(); break;
-      case 'stop': audio.pause(); audio.currentTime = 0; break;
       case 'previous': playPrevious(); break;
       case 'next': playNext(); break;
-      case 'seekBackward': seekBy(-10); break;
-      case 'seekForward': seekBy(10); break;
       default: break;
+    }
+  });
+  // El servicio nativo manda su propio progreso (posición/duración/si está
+  // sonando) más o menos una vez por segundo, y avisa cuando una canción
+  // termina — así la barra de progreso y el paso a la siguiente canción
+  // funcionan igual de bien aunque la pantalla lleve horas apagada.
+  nativeMedia.addListener('playbackProgress', (data) => {
+    if (!usingNativePlayback) return;
+    nativePlayerState.currentTime = Number(data?.position) || 0;
+    if (Number.isFinite(Number(data?.duration)) && Number(data?.duration) > 0) nativePlayerState.duration = Number(data.duration);
+    nativePlayerState.paused = !data?.playing;
+    handleTimeUpdate();
+  });
+  nativeMedia.addListener('trackEnded', () => {
+    if (!usingNativePlayback) return;
+    handleEnded();
+  });
+  nativeMedia.addListener('loadError', (data) => {
+    console.error('[starseeked] error del reproductor nativo:', data && data.message);
+    // Si el fallo pasa a media canción (no al cargarla, que ya tiene su
+    // propio aviso en playerLoadTrack), el MediaPlayer nativo se detiene
+    // por dentro pero, sin esto, el botón de reproducir se quedaría
+    // mostrando "pausar" para siempre y nadie se enteraría de que la
+    // música se cortó de verdad.
+    if (usingNativePlayback) {
+      nativePlayerState.paused = true;
+      updatePlayButton();
+      renderTracks();
+      showToast('La canción se detuvo por un error de reproducción.');
     }
   });
 }
@@ -1096,23 +1278,21 @@ function selectTrack(index, autoplay = true) {
     queueIds.push(track.id);
     saveQueue();
   }
-  audio.src = track.url;
   $('#nowTitle').textContent = track.title;
   $('#nowArtist').textContent = track.artist;
   applyCover($('#nowCover'), track);
   $('#favoriteBtn').classList.toggle('liked', track.favorite);
   updateMediaSession();
-  if (autoplay) audio.play().catch(() => showToast('Pulsa reproducir para comenzar la canción.'));
+  playerLoadTrack(track, autoplay);
   renderTracks();
   updatePlayButton();
 }
 
 function updatePlayButton() {
-  const isPlaying = !audio.paused && currentIndex >= 0;
+  const isPlaying = !playerIsPaused() && currentIndex >= 0;
   $('#playBtn').innerHTML = isPlaying ? pauseIcon : playIcon;
   $('#playBtn').setAttribute('aria-label', isPlaying ? 'Pausar' : 'Reproducir');
   if ('mediaSession' in navigator && currentIndex >= 0) navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
-  pushNativeMediaPlaybackState();
 }
 
 function playNext() {
@@ -1132,7 +1312,7 @@ function playNext() {
 function playPrevious() {
   const queuedTracks = getQueueTracks();
   if (!queuedTracks.length) return showToast('Añade canciones para llenar tu cola.');
-  if (audio.currentTime > 4) { audio.currentTime = 0; return; }
+  if (playerCurrentTime() > 4) { playerSetCurrentTime(0); return; }
   const currentQueueIndex = queuedTracks.findIndex((track) => track.id === tracks[currentIndex]?.id);
   const previousTrack = queuedTracks[(currentQueueIndex - 1 + queuedTracks.length) % queuedTracks.length];
   selectTrack(tracks.indexOf(previousTrack));
@@ -1258,9 +1438,7 @@ async function deleteTrack(index) {
   pushTrackDeletionToCloud(track.id);
   const wasCurrent = currentIndex === index;
   if (wasCurrent) {
-    audio.pause();
-    audio.removeAttribute('src');
-    audio.load();
+    playerUnload();
     currentIndex = -1;
     $('#nowTitle').textContent = 'Pon música q me aburro';
     $('#nowArtist').textContent = 'eres un irreverente y un deslenguado';
@@ -1312,11 +1490,11 @@ $('#emptyAddBtn').addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', (event) => { importFiles(event.target.files); event.target.value = ''; });
 $('#heroPlayBtn').addEventListener('click', () => {
   if (currentIndex < 0) return fileInput.click();
-  audio.play();
+  playerPlay();
 });
 $('#playBtn').addEventListener('click', () => {
   if (currentIndex < 0) return fileInput.click();
-  if (audio.paused) audio.play(); else audio.pause();
+  if (playerIsPaused()) playerPlay(); else playerPause();
 });
 $('#nextBtn').addEventListener('click', playNext);
 $('#previousBtn').addEventListener('click', playPrevious);
@@ -1408,14 +1586,20 @@ $('#editTrackForm').addEventListener('submit', async (event) => {
 });
 
 $$('[data-close-modal]').forEach((button) => button.addEventListener('click', () => closeModal(button.dataset.closeModal)));
-$('#progressRange').addEventListener('input', (event) => { if (audio.duration) audio.currentTime = (event.target.value / 100) * audio.duration; });
-$('#volumeRange').addEventListener('input', (event) => { audio.volume = event.target.value; });
-audio.volume = .8;
-audio.addEventListener('loadedmetadata', () => { $('#totalTime').textContent = formatTime(audio.duration); updateMediaSessionPosition(); });
-audio.addEventListener('timeupdate', () => { const progress = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0; $('#progressRange').value = progress; $('#currentTime').textContent = formatTime(audio.currentTime); updateMediaSessionPosition(); });
-audio.addEventListener('play', () => { if (tracks[currentIndex]) { tracks[currentIndex].playedAt = Date.now(); persistTrackState(tracks[currentIndex]); } updateMediaSession(); updatePlayButton(); renderTracks(); });
-audio.addEventListener('pause', () => { updatePlayButton(); renderTracks(); });
-audio.addEventListener('ended', () => isRepeat ? (audio.currentTime = 0, audio.play()) : playNext());
+$('#progressRange').addEventListener('input', (event) => { const duration = playerDuration(); if (duration) playerSetCurrentTime((event.target.value / 100) * duration); });
+$('#volumeRange').addEventListener('input', (event) => { playerSetVolume(Number(event.target.value)); });
+playerSetVolume(.8);
+// Estos cinco escuchadores solo importan cuando el audio suena de verdad a
+// través del elemento <video> (versión web/PWA/Electron, o como respaldo si
+// el reproductor nativo de Android no pudo cargar una canción en concreto):
+// cuando usingNativePlayback es true, el sonido no pasa por aquí en
+// absoluto y es el puente nativo (más arriba) quien llama a estos mismos
+// manejadores compartidos.
+audio.addEventListener('loadedmetadata', () => { if (!usingNativePlayback) handleLoadedMetadata(); });
+audio.addEventListener('timeupdate', () => { if (!usingNativePlayback) handleTimeUpdate(); });
+audio.addEventListener('play', () => { if (!usingNativePlayback) handlePlay(); });
+audio.addEventListener('pause', () => { if (!usingNativePlayback) handlePause(); });
+audio.addEventListener('ended', () => { if (!usingNativePlayback) handleEnded(); });
 
 // Tras mucho tiempo con la pantalla apagada o la app en segundo plano,
 // Android puede "congelar" el motor de JavaScript del WebView (para
@@ -1429,6 +1613,11 @@ let lastPlaybackWatchTime = 0;
 let lastPlaybackWatchPosition = -1;
 let playbackStuckStrikes = 0;
 function checkPlaybackFrozen() {
+  // Este truco de recuperación solo tiene sentido para el elemento <video>
+  // (web/PWA/respaldo): es ahí donde Android puede congelar la Surface de
+  // vídeo con la pantalla apagada. El reproductor nativo no tiene esa
+  // clase de fallo (por eso se construyó), así que aquí no hace nada.
+  if (usingNativePlayback) return;
   if (audio.paused || currentIndex < 0) {
     playbackStuckStrikes = 0;
     lastPlaybackWatchTime = 0;
