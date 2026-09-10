@@ -245,8 +245,13 @@ function setupMediaSession() {
 const nativeMedia = (() => {
   try {
     const cap = window.Capacitor;
-    if (cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins && cap.Plugins.MediaNotification) {
-      return cap.Plugins.MediaNotification;
+    if (cap && cap.isNativePlatform && cap.isNativePlatform()) {
+      if (cap.Plugins && cap.Plugins.MediaNotification) return cap.Plugins.MediaNotification;
+      // Si esto aparece en la consola, la app SÍ es la nativa de Android
+      // pero el complemento de notificación no llegó a registrarse en esa
+      // build en concreto — el problema estaría en la compilación, no en
+      // los permisos.
+      console.error('[starseeked] MediaNotification no está disponible en esta build nativa.');
     }
   } catch { /* Fuera de la app empaquetada no hay puente nativo. */ }
   return null;
@@ -262,7 +267,7 @@ function pushNativeMediaMetadata() {
       album: track.album || '',
       artwork: track.coverData || ''
     })
-    .catch(() => {});
+    .catch((error) => console.error('[starseeked] no se pudo actualizar los datos de la notificación', error));
 }
 
 function pushNativeMediaPlaybackState() {
@@ -274,7 +279,7 @@ function pushNativeMediaPlaybackState() {
       position: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
       duration: Number.isFinite(audio.duration) ? audio.duration : 0
     })
-    .catch(() => {});
+    .catch((error) => console.error('[starseeked] no se pudo actualizar el estado de la notificación', error));
 }
 
 function setupNativeMediaBridge() {
@@ -285,7 +290,18 @@ function setupNativeMediaBridge() {
   // ejecución. Sin esto, el widget de "reproduciendo ahora" nunca llegaba a
   // verse: no había ningún error, el sistema simplemente lo descartaba en
   // silencio porque nadie había pedido permiso todavía.
-  nativeMedia.requestPermission().catch(() => {});
+  nativeMedia.requestPermission()
+    .then((result) => {
+      // La versión anterior del plugin nativo siempre "resolvía" esta
+      // llamada aunque la persona hubiera denegado el permiso, así que
+      // aquí no había forma de saberlo. Ahora el plugin sí informa si de
+      // verdad quedó concedido, y si no, se avisa una vez de forma clara
+      // en vez de quedarse el widget sin aparecer sin explicación.
+      if (result && result.granted === false) {
+        showToast('Sin permiso de notificaciones: activa "Notificaciones" para starseeked en Ajustes del teléfono para ver el widget de reproducción.');
+      }
+    })
+    .catch((error) => console.error('[starseeked] no se pudo pedir el permiso de notificaciones', error));
   nativeMedia.addListener('controlAction', (data) => {
     const action = data && data.action;
     switch (action) {
@@ -1400,6 +1416,56 @@ audio.addEventListener('timeupdate', () => { const progress = audio.duration ? (
 audio.addEventListener('play', () => { if (tracks[currentIndex]) { tracks[currentIndex].playedAt = Date.now(); persistTrackState(tracks[currentIndex]); } updateMediaSession(); updatePlayButton(); renderTracks(); });
 audio.addEventListener('pause', () => { updatePlayButton(); renderTracks(); });
 audio.addEventListener('ended', () => isRepeat ? (audio.currentTime = 0, audio.play()) : playNext());
+
+// Tras mucho tiempo con la pantalla apagada o la app en segundo plano,
+// Android puede "congelar" el motor de JavaScript del WebView (para
+// ahorrar batería) y la canción se queda pillada en el mismo punto aunque
+// la app siga pensando que está sonando. Este vigilante lo detecta —
+// comparando cuánto ha avanzado audio.currentTime entre dos comprobaciones
+// separadas por varios segundos— y, si de verdad está pillada, la
+// recupera sola: recarga el audio en ese mismo punto y sigue reproduciendo,
+// sin que la persona tenga que volver a tocar la canción a mano.
+let lastPlaybackWatchTime = 0;
+let lastPlaybackWatchPosition = -1;
+let playbackStuckStrikes = 0;
+function checkPlaybackFrozen() {
+  if (audio.paused || currentIndex < 0) {
+    playbackStuckStrikes = 0;
+    lastPlaybackWatchTime = 0;
+    return;
+  }
+  const now = Date.now();
+  if (lastPlaybackWatchTime) {
+    const elapsedMs = now - lastPlaybackWatchTime;
+    // Ventanas raras (recién abierto, o llevaba horas de verdad en pausa
+    // total del sistema) no se evalúan: al reabrir la app la canción ya se
+    // recarga sola de todas formas.
+    if (elapsedMs > 4000 && elapsedMs < 180000) {
+      const advanced = audio.currentTime - lastPlaybackWatchPosition;
+      playbackStuckStrikes = advanced < 0.4 ? playbackStuckStrikes + 1 : 0;
+      if (playbackStuckStrikes >= 2) {
+        playbackStuckStrikes = 0;
+        const resumeAt = audio.currentTime;
+        console.warn('[starseeked] reproducción congelada detectada; recuperando desde', resumeAt);
+        const resume = () => {
+          audio.currentTime = resumeAt;
+          audio.play().catch(() => {});
+          audio.removeEventListener('loadedmetadata', resume);
+        };
+        audio.addEventListener('loadedmetadata', resume);
+        audio.load();
+        lastPlaybackWatchTime = 0;
+        return;
+      }
+    }
+  }
+  lastPlaybackWatchTime = now;
+  lastPlaybackWatchPosition = audio.currentTime;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkPlaybackFrozen();
+});
+setInterval(checkPlaybackFrozen, 15000);
 
 $('#searchInput').addEventListener('input', (event) => { searchTerm = event.target.value; renderTracks(); });
 $('#androidDownloadBtn').addEventListener('click', async (event) => {
