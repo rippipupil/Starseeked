@@ -139,6 +139,1034 @@ jobs:
           import android.content.Intent;
           import android.graphics.Bitmap;
           import android.graphics.BitmapFactory;
+          import android.media.AudioAttributes;
+          import android.media.MediaPlayer;
+          import android.os.Build;
+          import android.os.Handler;
+          import android.os.IBinder;
+          import android.os.Looper;
+          import android.os.PowerManager;
+          import android.support.v4.media.MediaMetadataCompat;
+          import android.support.v4.media.session.MediaSessionCompat;
+          import android.support.v4.media.session.PlaybackStateCompat;
+          import android.util.Base64;
+          import android.util.Log;
+          import androidx.annotation.Nullable;
+          import androidx.core.app.NotificationCompat;
+          import androidx.core.app.NotificationManagerCompat;
+          import androidx.media.app.NotificationCompat.MediaStyle;
+
+          /**
+           * Mantiene viva la reproducción de verdad y la notificación de
+           * "reproduciendo ahora" (con portada y controles) mientras la app está
+           * en segundo plano o con la pantalla apagada.
+           *
+           * A diferencia de la primera versión de este servicio (que solo
+           * reflejaba en la notificación lo que sonaba en el <video> de la
+           * página web), este servicio reproduce el audio él mismo con un
+           * MediaPlayer nativo de Android: la página web le manda la canción
+           * (como archivo, no solo su nombre) una única vez al cargarla, y a
+           * partir de ahí el sonido ya no depende para nada de que el WebView
+           * siga "despierto" ni de su Surface de vídeo — que es precisamente lo
+           * que Android puede congelar con la pantalla apagada y lo que causaba
+           * que la música se cortara tras un rato.
+           */
+          public class MediaPlaybackService extends Service {
+
+              private static final String TAG = "MediaPlaybackService";
+
+              // Mantenidas por compatibilidad: refresco de metadatos "en frío"
+              // (por ejemplo, la portada de repuesto cuando cambias de cielo sin
+              // tocar la reproducción) sigue pasando por aquí sin recargar audio.
+              public static final String ACTION_UPDATE_METADATA = "com.starseeked.player.action.UPDATE_METADATA";
+              // Carga (y opcionalmente arranca) una canción entera en el
+              // MediaPlayer nativo.
+              public static final String ACTION_LOAD = "com.starseeked.player.action.LOAD";
+              public static final String ACTION_PLAY = "com.starseeked.player.action.PLAY";
+              public static final String ACTION_PAUSE = "com.starseeked.player.action.PAUSE";
+              public static final String ACTION_SEEK = "com.starseeked.player.action.SEEK";
+              public static final String ACTION_SET_VOLUME = "com.starseeked.player.action.SET_VOLUME";
+              public static final String ACTION_STOP_PLAYBACK = "com.starseeked.player.action.STOP_PLAYBACK";
+              public static final String ACTION_CONTROL = "com.starseeked.player.action.CONTROL";
+              public static final String EXTRA_CONTROL = "control";
+
+              private static final String CHANNEL_ID = "starseeked_playback";
+              private static final int NOTIFICATION_ID = 4200;
+
+              private MediaSessionCompat mediaSession;
+              private MediaPlayer mediaPlayer;
+              private final Handler progressHandler = new Handler(Looper.getMainLooper());
+              private final Runnable progressRunnable = new Runnable() {
+                  @Override
+                  public void run() {
+                      if (mediaPlayer != null && isPlaying) {
+                          try {
+                              positionMs = mediaPlayer.getCurrentPosition();
+                              pushProgressEvent();
+                          } catch (Exception e) {
+                              // El MediaPlayer puede haber quedado en un estado
+                              // inválido un instante (p. ej. justo tras liberarlo);
+                              // se ignora este tic y se reintenta en el siguiente.
+                          }
+                      }
+                      progressHandler.postDelayed(this, 1000);
+                  }
+              };
+              // Tras mucho tiempo con la pantalla apagada, Android puede entrar en
+              // modos de ahorro de batería agresivos que frenan la CPU. Mientras
+              // haya una canción sonando, este "wake lock" parcial le pide al
+              // sistema que no deje dormir del todo al procesador — exactamente lo
+              // mismo que hace cualquier reproductor de música nativo — y se
+              // libera en cuanto se pausa, para no gastar batería de más el resto
+              // del tiempo. Con el audio ahora reproducido aquí mismo (y no en el
+              // WebView) esto vuelve a tener el efecto real para el que sirve.
+              private PowerManager.WakeLock wakeLock;
+              private String title = "starseeked";
+              private String artist = "";
+              private String album = "";
+              private Bitmap artwork;
+              private boolean isPlaying = false;
+              private long positionMs = 0;
+              private long durationMs = 0;
+
+              @Override
+              public void onCreate() {
+                  super.onCreate();
+                  PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                  if (powerManager != null) {
+                      wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "starseeked:playback");
+                      wakeLock.setReferenceCounted(false);
+                  }
+                  mediaSession = new MediaSessionCompat(this, "starseeked");
+                  mediaSession.setCallback(new MediaSessionCompat.Callback() {
+                      // Reproducir/pausar/parar/saltar los resuelve este servicio
+                      // directamente sobre su propio MediaPlayer — ni siquiera
+                      // necesita que la página web esté activa para responder a
+                      // los controles de la notificación, la pantalla de bloqueo
+                      // o unos auriculares Bluetooth.
+                      @Override
+                      public void onPlay() {
+                          playInternal();
+                      }
+
+                      @Override
+                      public void onPause() {
+                          pauseInternal();
+                      }
+
+                      @Override
+                      public void onStop() {
+                          stopInternal();
+                      }
+
+                      @Override
+                      public void onSeekTo(long pos) {
+                          seekToInternal(pos);
+                      }
+
+                      // Saltar de canción sí depende del orden de la cola
+                      // (aleatorio, repetir), que solo conoce la página web —
+                      // aquí solo se le avisa de que lo pidan.
+                      @Override
+                      public void onSkipToNext() {
+                          MediaNotificationPlugin.notifyControlAction("next");
+                      }
+
+                      @Override
+                      public void onSkipToPrevious() {
+                          MediaNotificationPlugin.notifyControlAction("previous");
+                      }
+                  });
+                  mediaSession.setActive(true);
+                  createNotificationChannel();
+              }
+
+              @Override
+              public int onStartCommand(Intent intent, int flags, int startId) {
+                  if (intent == null) {
+                      return START_NOT_STICKY;
+                  }
+                  String action = intent.getAction();
+                  if (ACTION_LOAD.equals(action)) {
+                      boolean autoplay = intent.getBooleanExtra("autoplay", true);
+                      float volume = (float) intent.getDoubleExtra("volume", 1.0);
+                      loadInternal(
+                          intent.getStringExtra("path"),
+                          intent.getStringExtra("title"),
+                          intent.getStringExtra("artist"),
+                          intent.getStringExtra("album"),
+                          intent.getStringExtra("artwork"),
+                          autoplay,
+                          volume
+                      );
+                  } else if (ACTION_PLAY.equals(action)) {
+                      playInternal();
+                  } else if (ACTION_PAUSE.equals(action)) {
+                      pauseInternal();
+                  } else if (ACTION_SEEK.equals(action)) {
+                      seekToInternal(Math.round(intent.getDoubleExtra("position", 0.0) * 1000));
+                  } else if (ACTION_SET_VOLUME.equals(action)) {
+                      float volume = (float) intent.getDoubleExtra("volume", 1.0);
+                      if (mediaPlayer != null) {
+                          try {
+                              mediaPlayer.setVolume(volume, volume);
+                          } catch (Exception e) {
+                              Log.w(TAG, "No se pudo cambiar el volumen", e);
+                          }
+                      }
+                  } else if (ACTION_STOP_PLAYBACK.equals(action)) {
+                      stopInternal();
+                      return START_NOT_STICKY;
+                  } else if (ACTION_UPDATE_METADATA.equals(action)) {
+                      title = safe(intent.getStringExtra("title"), "starseeked");
+                      artist = safe(intent.getStringExtra("artist"), "");
+                      album = safe(intent.getStringExtra("album"), "");
+                      artwork = decodeArtwork(intent.getStringExtra("artwork"));
+                      publishMetadata();
+                  } else if (ACTION_CONTROL.equals(action)) {
+                      String control = intent.getStringExtra(EXTRA_CONTROL);
+                      handleControl(control);
+                      if ("stop".equals(control)) {
+                          return START_NOT_STICKY;
+                      }
+                  }
+                  Notification notification = buildNotification();
+                  startForeground(NOTIFICATION_ID, notification);
+                  return START_NOT_STICKY;
+              }
+
+              // Pulsaciones que llegan como Intent (desde los botones de la propia
+              // notificación, que son PendingIntent a este mismo servicio).
+              private void handleControl(String control) {
+                  if (control == null) return;
+                  switch (control) {
+                      case "play": playInternal(); break;
+                      case "pause": pauseInternal(); break;
+                      case "stop": stopInternal(); break;
+                      case "seekBackward": seekByInternal(-10000); break;
+                      case "seekForward": seekByInternal(10000); break;
+                      case "previous": MediaNotificationPlugin.notifyControlAction("previous"); break;
+                      case "next": MediaNotificationPlugin.notifyControlAction("next"); break;
+                      default: break;
+                  }
+              }
+
+              // Sustituye la canción que suena por una nueva: recibe la ruta de
+              // un archivo YA escrito en el almacenamiento propio de la app (lo
+              // deja preparado MediaNotificationPlugin.loadTrack, a partir del
+              // audio en base64 que manda la página web) y se lo entrega al
+              // MediaPlayer. Todo lo que pasa a partir de aquí —decodificar,
+              // reproducir, seguir sonando con la pantalla apagada— lo hace
+              // Android de forma nativa, igual que con cualquier otro reproductor
+              // de música instalado en el teléfono.
+              private void loadInternal(String path, String newTitle, String newArtist, String newAlbum, String artworkDataUrl, boolean autoplay, float volume) {
+                  stopProgressUpdates();
+                  if (mediaPlayer != null) {
+                      try { mediaPlayer.reset(); } catch (Exception e) { /* Se ignora: se va a sustituir igualmente. */ }
+                      try { mediaPlayer.release(); } catch (Exception e) { /* Idem. */ }
+                      mediaPlayer = null;
+                  }
+                  title = safe(newTitle, "starseeked");
+                  artist = safe(newArtist, "");
+                  album = safe(newAlbum, "");
+                  artwork = decodeArtwork(artworkDataUrl);
+                  isPlaying = false;
+                  positionMs = 0;
+                  durationMs = 0;
+                  publishMetadata();
+                  publishState();
+
+                  if (path == null || path.isEmpty()) {
+                      MediaNotificationPlugin.notifyLoadError("No se recibió el archivo de audio.");
+                      return;
+                  }
+
+                  try {
+                      MediaPlayer player = new MediaPlayer();
+                      AudioAttributes attributes = new AudioAttributes.Builder()
+                          .setUsage(AudioAttributes.USAGE_MEDIA)
+                          .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                          .build();
+                      player.setAudioAttributes(attributes);
+                      player.setVolume(volume, volume);
+                      player.setDataSource(path);
+                      player.setOnPreparedListener(mp -> {
+                          durationMs = mp.getDuration();
+                          publishMetadata();
+                          publishState();
+                          MediaNotificationPlugin.notifyTrackLoaded(durationMs / 1000.0);
+                          if (autoplay) {
+                              playInternal();
+                          } else {
+                              updateNotification();
+                          }
+                      });
+                      player.setOnCompletionListener(mp -> {
+                          isPlaying = false;
+                          stopProgressUpdates();
+                          releaseWakeLock();
+                          publishState();
+                          updateNotification();
+                          MediaNotificationPlugin.notifyTrackEnded();
+                      });
+                      player.setOnErrorListener((mp, what, extra) -> {
+                          Log.w(TAG, "MediaPlayer error: " + what + "/" + extra);
+                          isPlaying = false;
+                          stopProgressUpdates();
+                          releaseWakeLock();
+                          // Si el error llega a media canción (no al cargarla), ya
+                          // no hay ninguna llamada de loadTrack pendiente que
+                          // rechazar — pero la notificación y el aviso a la web
+                          // deben reflejar igualmente que la reproducción se
+                          // detuvo de verdad, para no dejar el botón de "pausar"
+                          // encendido con la canción ya parada.
+                          publishState();
+                          updateNotification();
+                          MediaNotificationPlugin.notifyLoadError("No se pudo reproducir el audio (código " + what + ").");
+                          return true;
+                      });
+                      mediaPlayer = player;
+                      player.prepareAsync();
+                  } catch (Exception e) {
+                      Log.w(TAG, "No se pudo cargar la canción", e);
+                      MediaNotificationPlugin.notifyLoadError(e.getMessage() != null ? e.getMessage() : "No se pudo cargar la canción.");
+                  }
+              }
+
+              private void playInternal() {
+                  if (mediaPlayer == null) return;
+                  try {
+                      if (!mediaPlayer.isPlaying()) mediaPlayer.start();
+                      isPlaying = true;
+                      startProgressUpdates();
+                      updateWakeLock();
+                      publishState();
+                      updateNotification();
+                  } catch (Exception e) {
+                      Log.w(TAG, "No se pudo reanudar la reproducción", e);
+                  }
+              }
+
+              private void pauseInternal() {
+                  if (mediaPlayer != null) {
+                      try {
+                          if (mediaPlayer.isPlaying()) mediaPlayer.pause();
+                      } catch (Exception e) {
+                          Log.w(TAG, "No se pudo pausar", e);
+                      }
+                  }
+                  isPlaying = false;
+                  stopProgressUpdates();
+                  updateWakeLock();
+                  publishState();
+                  updateNotification();
+              }
+
+              private void stopInternal() {
+                  pauseInternal();
+                  releaseWakeLock();
+                  stopForeground(true);
+                  stopSelf();
+              }
+
+              private void seekByInternal(long deltaMs) {
+                  if (mediaPlayer == null) return;
+                  try {
+                      long target = Math.max(0, Math.min((long) mediaPlayer.getDuration(), (long) mediaPlayer.getCurrentPosition() + deltaMs));
+                      seekToInternal(target);
+                  } catch (Exception e) {
+                      Log.w(TAG, "No se pudo saltar en la reproducción", e);
+                  }
+              }
+
+              private void seekToInternal(long ms) {
+                  if (mediaPlayer == null) return;
+                  try {
+                      int target = (int) Math.max(0, Math.min((long) mediaPlayer.getDuration(), ms));
+                      mediaPlayer.seekTo(target);
+                      positionMs = target;
+                      publishState();
+                      pushProgressEvent();
+                  } catch (Exception e) {
+                      Log.w(TAG, "No se pudo mover la posición", e);
+                  }
+              }
+
+              private void startProgressUpdates() {
+                  progressHandler.removeCallbacks(progressRunnable);
+                  progressHandler.postDelayed(progressRunnable, 1000);
+              }
+
+              private void stopProgressUpdates() {
+                  progressHandler.removeCallbacks(progressRunnable);
+              }
+
+              private void pushProgressEvent() {
+                  MediaNotificationPlugin.notifyProgress(positionMs / 1000.0, durationMs / 1000.0, isPlaying);
+              }
+
+              private void updateNotification() {
+                  try {
+                      NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification());
+                  } catch (Exception e) {
+                      Log.w(TAG, "No se pudo actualizar la notificación", e);
+                  }
+              }
+
+              private void publishMetadata() {
+                  MediaMetadataCompat.Builder builder = new MediaMetadataCompat.Builder()
+                      .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                      .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                      .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+                      .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs);
+                  if (artwork != null) {
+                      builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork);
+                  }
+                  mediaSession.setMetadata(builder.build());
+              }
+
+              private void publishState() {
+                  long actions = PlaybackStateCompat.ACTION_PLAY
+                      | PlaybackStateCompat.ACTION_PAUSE
+                      | PlaybackStateCompat.ACTION_PLAY_PAUSE
+                      | PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+                      | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+                      | PlaybackStateCompat.ACTION_SEEK_TO
+                      | PlaybackStateCompat.ACTION_STOP;
+                  int state = isPlaying ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
+                  PlaybackStateCompat playbackState = new PlaybackStateCompat.Builder()
+                      .setActions(actions)
+                      .setState(state, positionMs, isPlaying ? 1f : 0f)
+                      .build();
+                  mediaSession.setPlaybackState(playbackState);
+              }
+
+              private Notification buildNotification() {
+                  PendingIntent playPauseIntent = controlPendingIntent(isPlaying ? "pause" : "play", 1);
+                  PendingIntent nextIntent = controlPendingIntent("next", 2);
+                  PendingIntent previousIntent = controlPendingIntent("previous", 3);
+
+                  NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                      .setSmallIcon(android.R.drawable.ic_media_play)
+                      .setContentTitle(title)
+                      .setContentText(artist)
+                      .setSubText(album)
+                      .setOngoing(isPlaying)
+                      .setOnlyAlertOnce(true)
+                      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                      .setPriority(NotificationCompat.PRIORITY_LOW)
+                      .addAction(android.R.drawable.ic_media_previous, "Anterior", previousIntent)
+                      .addAction(
+                          isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
+                          isPlaying ? "Pausar" : "Reproducir",
+                          playPauseIntent
+                      )
+                      .addAction(android.R.drawable.ic_media_next, "Siguiente", nextIntent)
+                      .setStyle(
+                          new MediaStyle().setMediaSession(mediaSession.getSessionToken()).setShowActionsInCompactView(0, 1, 2)
+                      );
+                  if (artwork != null) {
+                      builder.setLargeIcon(artwork);
+                  }
+                  return builder.build();
+              }
+
+              private PendingIntent controlPendingIntent(String control, int requestCode) {
+                  Intent intent = new Intent(this, MediaPlaybackService.class);
+                  intent.setAction(ACTION_CONTROL);
+                  intent.putExtra(EXTRA_CONTROL, control);
+                  int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+                  return PendingIntent.getService(this, requestCode, intent, flags);
+              }
+
+              private void createNotificationChannel() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      NotificationManager manager = getSystemService(NotificationManager.class);
+                      if (manager != null && manager.getNotificationChannel(CHANNEL_ID) == null) {
+                          NotificationChannel channel = new NotificationChannel(
+                              CHANNEL_ID,
+                              "Reproducción de música",
+                              NotificationManager.IMPORTANCE_LOW
+                          );
+                          channel.setDescription("Controles de reproducción de starseeked");
+                          channel.setShowBadge(false);
+                          manager.createNotificationChannel(channel);
+                      }
+                  }
+              }
+
+              private Bitmap decodeArtwork(String dataUrl) {
+                  if (dataUrl == null || dataUrl.isEmpty()) {
+                      return null;
+                  }
+                  try {
+                      String base64 = dataUrl.contains(",") ? dataUrl.substring(dataUrl.indexOf(',') + 1) : dataUrl;
+                      byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+                      return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                  } catch (Exception e) {
+                      Log.w("MediaPlaybackService", "No se pudo decodificar la portada", e);
+                      return null;
+                  }
+              }
+
+              private String safe(String value, String fallback) {
+                  return value == null ? fallback : value;
+              }
+
+              private void updateWakeLock() {
+                  if (wakeLock == null) return;
+                  if (isPlaying) {
+                      if (!wakeLock.isHeld()) wakeLock.acquire();
+                  } else {
+                      releaseWakeLock();
+                  }
+              }
+
+              private void releaseWakeLock() {
+                  if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+              }
+
+              @Nullable
+              @Override
+              public IBinder onBind(Intent intent) {
+                  return null;
+              }
+
+              @Override
+              public void onDestroy() {
+                  stopProgressUpdates();
+                  if (mediaPlayer != null) {
+                      try { mediaPlayer.release(); } catch (Exception e) { /* Se está cerrando de todas formas. */ }
+                      mediaPlayer = null;
+                  }
+                  releaseWakeLock();
+                  if (mediaSession != null) {
+                      mediaSession.setActive(false);
+                      mediaSession.release();
+                  }
+                  super.onDestroy();
+              }
+          }
+          JAVA
+
+          cat > android/app/src/main/java/com/starseeked/player/MediaNotificationPlugin.java <<'JAVA'
+          package com.starseeked.player;
+
+          import android.Manifest;
+          import android.content.Intent;
+          import android.os.Build;
+          import androidx.core.content.ContextCompat;
+          import android.util.Base64;
+          import android.util.Log;
+          import com.getcapacitor.JSObject;
+          import com.getcapacitor.PermissionState;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+          import com.getcapacitor.annotation.Permission;
+          import com.getcapacitor.annotation.PermissionCallback;
+          import java.io.File;
+          import java.io.FileOutputStream;
+
+          /**
+           * Puente entre la página web (app.js) y la reproducción nativa de
+           * Android. A diferencia de la primera versión (que solo reflejaba en
+           * una notificación lo que sonaba en la propia página web), este plugin
+           * le entrega a MediaPlaybackService el audio entero de cada canción
+           * (loadTrack) y los controles de reproducción (play/pause/seekTo/
+           * setVolume), para que el sonido lo reproduzca un MediaPlayer nativo
+           * que no depende de que el WebView siga activo. Sigue devolviendo a la
+           * web, como antes, las pulsaciones de "anterior"/"siguiente" (que
+           * dependen del orden de la cola, algo que solo sabe la página) como el
+           * evento "controlAction", además de eventos de progreso
+           * ("playbackProgress"), fin de canción ("trackEnded") y errores de
+           * reproducción ("loadError").
+           */
+          @CapacitorPlugin(
+              name = "MediaNotification",
+              permissions = { @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications") }
+          )
+          public class MediaNotificationPlugin extends Plugin {
+
+              private static MediaNotificationPlugin activeInstance;
+              // Solo puede haber una carga de canción "en vuelo" a la vez: esta
+              // llamada se queda pendiente hasta que MediaPlaybackService avisa de
+              // que el MediaPlayer ya terminó de preparar el archivo (o de que
+              // falló), momento en el que se resuelve con la duración real.
+              // volatile: MediaPlaybackService confirma o rechaza esta llamada
+              // desde los callbacks del MediaPlayer, que corren en el hilo
+              // principal de Android, mientras que este plugin la crea desde el
+              // hilo en segundo plano donde Capacitor ejecuta los @PluginMethod
+              // — así el segundo hilo siempre ve la asignación más reciente.
+              private volatile PluginCall pendingLoadCall;
+              private File lastAudioFile;
+
+              @Override
+              public void load() {
+                  super.load();
+                  activeInstance = this;
+              }
+
+              @PluginMethod
+              public void requestPermission(PluginCall call) {
+                  if (Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED) {
+                      resolveWithGranted(call, true);
+                      return;
+                  }
+                  requestPermissionForAlias("notifications", call, "notificationPermsCallback");
+              }
+
+              @PermissionCallback
+              private void notificationPermsCallback(PluginCall call) {
+                  // Antes esto resolvía siempre como si todo hubiera ido bien,
+                  // aunque la persona hubiera denegado el permiso — así que
+                  // app.js nunca podía saber que el widget no iba a poder
+                  // aparecer. Ahora sí se informa el resultado real.
+                  resolveWithGranted(call, getPermissionState("notifications") == PermissionState.GRANTED);
+              }
+
+              private void resolveWithGranted(PluginCall call, boolean granted) {
+                  JSObject result = new JSObject();
+                  result.put("granted", granted);
+                  call.resolve(result);
+              }
+
+              // Recibe el audio entero de una canción (como "data URL" en
+              // base64, tal y como lo lee FileReader en la web) y lo carga en el
+              // MediaPlayer nativo. Se resuelve más tarde, desde
+              // notifyTrackLoaded()/notifyLoadError(), cuando el propio
+              // MediaPlayer confirma si pudo prepararlo o no — así app.js sabe
+              // con certeza si puede confiar en la reproducción nativa para esta
+              // canción o si debe usar su respaldo web.
+              @PluginMethod
+              public void loadTrack(PluginCall call) {
+                  String audioDataUrl = call.getString("audio", "");
+                  if (audioDataUrl == null || audioDataUrl.isEmpty()) {
+                      call.reject("Falta el audio de la canción.");
+                      return;
+                  }
+                  String path;
+                  try {
+                      path = writeAudioToCache(audioDataUrl);
+                  } catch (Exception e) {
+                      Log.w("MediaNotification", "No se pudo guardar el audio recibido", e);
+                      call.reject("No se pudo guardar el audio para reproducirlo: " + e.getMessage());
+                      return;
+                  }
+                  if (pendingLoadCall != null) {
+                      // Una carga nueva sustituye a cualquier carga anterior que
+                      // no hubiera llegado a resolverse (p. ej. si la persona
+                      // cambia de canción muy rápido dos veces seguidas).
+                      pendingLoadCall.reject("Se cargó otra canción antes de que esta terminara.");
+                  }
+                  pendingLoadCall = call;
+                  Intent intent = new Intent(getContext(), MediaPlaybackService.class);
+                  intent.setAction(MediaPlaybackService.ACTION_LOAD);
+                  intent.putExtra("path", path);
+                  intent.putExtra("title", call.getString("title", "starseeked"));
+                  intent.putExtra("artist", call.getString("artist", ""));
+                  intent.putExtra("album", call.getString("album", ""));
+                  intent.putExtra("artwork", call.getString("artwork", ""));
+                  intent.putExtra("autoplay", Boolean.TRUE.equals(call.getBoolean("autoplay", true)));
+                  intent.putExtra("volume", call.getDouble("volume", 1.0));
+                  startPlaybackService(intent);
+              }
+
+              @PluginMethod
+              public void play(PluginCall call) {
+                  Intent intent = new Intent(getContext(), MediaPlaybackService.class);
+                  intent.setAction(MediaPlaybackService.ACTION_PLAY);
+                  startPlaybackService(intent);
+                  call.resolve();
+              }
+
+              @PluginMethod
+              public void pause(PluginCall call) {
+                  Intent intent = new Intent(getContext(), MediaPlaybackService.class);
+                  intent.setAction(MediaPlaybackService.ACTION_PAUSE);
+                  startPlaybackService(intent);
+                  call.resolve();
+              }
+
+              @PluginMethod
+              public void seekTo(PluginCall call) {
+                  Intent intent = new Intent(getContext(), MediaPlaybackService.class);
+                  intent.setAction(MediaPlaybackService.ACTION_SEEK);
+                  intent.putExtra("position", call.getDouble("position", 0.0));
+                  startPlaybackService(intent);
+                  call.resolve();
+              }
+
+              @PluginMethod
+              public void setVolume(PluginCall call) {
+                  Intent intent = new Intent(getContext(), MediaPlaybackService.class);
+                  intent.setAction(MediaPlaybackService.ACTION_SET_VOLUME);
+                  intent.putExtra("volume", call.getDouble("volume", 1.0));
+                  startPlaybackService(intent);
+                  call.resolve();
+              }
+
+              @PluginMethod
+              public void stopPlayback(PluginCall call) {
+                  Intent intent = new Intent(getContext(), MediaPlaybackService.class);
+                  intent.setAction(MediaPlaybackService.ACTION_STOP_PLAYBACK);
+                  startPlaybackService(intent);
+                  call.resolve();
+              }
+
+              // Refresco de metadatos "en frío" (p. ej. la portada de repuesto
+              // cambia al cambiar de cielo) sin tocar la reproducción ni el
+              // archivo cargado.
+              @PluginMethod
+              public void updateMetadata(PluginCall call) {
+                  Intent intent = new Intent(getContext(), MediaPlaybackService.class);
+                  intent.setAction(MediaPlaybackService.ACTION_UPDATE_METADATA);
+                  intent.putExtra("title", call.getString("title", "starseeked"));
+                  intent.putExtra("artist", call.getString("artist", ""));
+                  intent.putExtra("album", call.getString("album", ""));
+                  intent.putExtra("artwork", call.getString("artwork", ""));
+                  startPlaybackService(intent);
+                  call.resolve();
+              }
+
+              // El audio que guarda esta app vive como Blobs en el IndexedDB del
+              // WebView, no como archivos normales — por eso la única forma de
+              // pasárselo a un MediaPlayer nativo es mandarlo entero en base64 y
+              // escribirlo aquí a un archivo real, dentro de la caché privada de
+              // la app (no en almacenamiento compartido). Se sobrescribe en cada
+              // canción nueva y se borra la copia anterior para no acumular
+              // archivos.
+              private String writeAudioToCache(String dataUrl) throws Exception {
+                  String base64 = dataUrl.contains(",") ? dataUrl.substring(dataUrl.indexOf(',') + 1) : dataUrl;
+                  byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+                  File tempFile = new File(getContext().getCacheDir(), "starseeked_track_" + System.currentTimeMillis() + ".audio");
+                  try (FileOutputStream out = new FileOutputStream(tempFile)) {
+                      out.write(bytes);
+                  }
+                  File previous = lastAudioFile;
+                  lastAudioFile = tempFile;
+                  if (previous != null && previous.exists() && !previous.equals(tempFile)) {
+                      previous.delete();
+                  }
+                  return tempFile.getAbsolutePath();
+              }
+
+              private void startPlaybackService(Intent intent) {
+                  try {
+                      ContextCompat.startForegroundService(getContext(), intent);
+                  } catch (Exception e) {
+                      Log.w("MediaNotification", "No se pudo hablar con el servicio de reproducción", e);
+                  }
+              }
+
+              static void notifyControlAction(String action) {
+                  if (activeInstance == null || action == null) {
+                      return;
+                  }
+                  JSObject data = new JSObject();
+                  data.put("action", action);
+                  activeInstance.notifyListeners("controlAction", data);
+              }
+
+              static void notifyTrackLoaded(double durationSeconds) {
+                  if (activeInstance == null) return;
+                  PluginCall call = activeInstance.pendingLoadCall;
+                  activeInstance.pendingLoadCall = null;
+                  if (call == null) return;
+                  JSObject result = new JSObject();
+                  result.put("duration", durationSeconds);
+                  call.resolve(result);
+              }
+
+              static void notifyLoadError(String message) {
+                  if (activeInstance == null) return;
+                  PluginCall call = activeInstance.pendingLoadCall;
+                  activeInstance.pendingLoadCall = null;
+                  if (call != null) {
+                      call.reject(message);
+                  }
+                  JSObject data = new JSObject();
+                  data.put("message", message);
+                  activeInstance.notifyListeners("loadError", data);
+              }
+
+              static void notifyProgress(double positionSeconds, double durationSeconds, boolean playing) {
+                  if (activeInstance == null) return;
+                  JSObject data = new JSObject();
+                  data.put("position", positionSeconds);
+                  data.put("duration", durationSeconds);
+                  data.put("playing", playing);
+                  activeInstance.notifyListeners("playbackProgress", data);
+              }
+
+              static void notifyTrackEnded() {
+                  if (activeInstance == null) return;
+                  activeInstance.notifyListeners("trackEnded", new JSObject());
+              }
+          }
+          JAVA
+
+          python3 - <<'PY'
+          import re
+
+          # 1) Gradle: el servicio necesita MediaSessionCompat / PlaybackStateCompat /
+          #    MediaMetadataCompat y el MediaStyle de notificaciones, que viven en
+          #    androidx.media (no en androidx.core, que ya estaba incluido).
+          gradle_path = 'android/app/build.gradle'
+          with open(gradle_path, encoding='utf-8') as f:
+              gradle = f.read()
+          anchor = '    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"\n'
+          if anchor not in gradle:
+              raise SystemExit('No se encontró la línea de core-splashscreen en build.gradle para añadir androidx.media')
+          if 'androidx.media:media' not in gradle:
+              gradle = gradle.replace(anchor, anchor + '    implementation "androidx.media:media:1.7.0"\n')
+              with open(gradle_path, 'w', encoding='utf-8') as f:
+                  f.write(gradle)
+              print('androidx.media añadido a build.gradle')
+          else:
+              print('androidx.media ya estaba en build.gradle')
+
+          # 2) Manifest: permisos para el servicio en primer plano + notificaciones,
+          #    y declaración del propio servicio con su tipo (obligatorio en Android 14+).
+          manifest_path = 'android/app/src/main/AndroidManifest.xml'
+          with open(manifest_path, encoding='utf-8') as f:
+              manifest = f.read()
+
+          perm_anchor = '    <uses-permission android:name="android.permission.INTERNET" />'
+          extra_perms = (
+              perm_anchor + '\n'
+              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
+              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />\n'
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
+              '    <uses-permission android:name="android.permission.WAKE_LOCK" />'
+          )
+          if perm_anchor not in manifest:
+              raise SystemExit('No se encontró el permiso de INTERNET en AndroidManifest.xml')
+          if 'FOREGROUND_SERVICE_MEDIA_PLAYBACK' not in manifest:
+              manifest = manifest.replace(perm_anchor, extra_perms)
+          elif 'permission.WAKE_LOCK' not in manifest:
+              # Por si alguna vez se ejecuta este script sobre un manifest que ya
+              # tenía los permisos anteriores pero no este (defensivo; en la
+              # práctica el proyecto Android se regenera entero en cada build).
+              manifest = manifest.replace(
+                  '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+                  '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
+                  '    <uses-permission android:name="android.permission.WAKE_LOCK" />',
+              )
+
+          service_block = (
+              '        <service\n'
+              '            android:name=".MediaPlaybackService"\n'
+              '            android:exported="false"\n'
+              '            android:foregroundServiceType="mediaPlayback" />\n'
+              '    </application>'
+          )
+          if 'MediaPlaybackService' not in manifest.split('</application>')[0] or '.MediaPlaybackService"' not in manifest:
+              manifest = manifest.replace('    </application>', service_block)
+
+          with open(manifest_path, 'w', encoding='utf-8') as f:
+              f.write(manifest)
+          print('AndroidManifest.xml actualizado')
+          PY
+
+      - name: Generar el icono de la app (fondo + estrellas en assets/)
+        run: npx @capacitor/assets generate --android
+
+      # @capacitor/assets (v3.0.5) tiene un fallo conocido: al generar el
+      # icono adaptativo escribe un "recorte" (inset) del 16.7% tanto en la
+      # capa de primer plano (correcto, para que las estrellas no se corten
+      # con las máscaras redondas/cuadradas de cada móvil) como en la capa
+      # de FONDO (incorrecto: eso deja el fondo flotando como una "burbuja"
+      # pequeña rodeada de espacio vacío, en vez de cubrir todo el icono).
+      # Aquí quitamos ese recorte solo del fondo para que rellene el icono
+      # de borde a borde, tal y como se ve en la vista previa.
+      - name: Corregir el fondo del icono adaptativo (quitar la "burbuja")
+        run: |
+          python3 - <<'PY'
+          import re, glob
+          pattern = re.compile(
+              r'<background>\s*<inset[^>]*android:drawable="@mipmap/ic_launcher_background"[^>]*/>\s*</background>'
+          )
+          replacement = '<background android:drawable="@mipmap/ic_launcher_background" />'
+          changed = 0
+          for path in glob.glob('android/app/src/main/res/mipmap-anydpi-v26/ic_launcher*.xml'):
+              with open(path, encoding='utf-8') as f:
+                  xml = f.read()
+              fixed = pattern.sub(replacement, xml)
+              if fixed != xml:
+                  with open(path, 'w', encoding='utf-8') as f:
+                      f.write(fixed)
+                  changed += 1
+                  print('Corregido:', path)
+              else:
+                  print('Sin cambios necesarios:', path)
+          if changed == 0:
+              raise SystemExit('No se corrigió ningún icon.xml: revisa el formato generado por @capacitor/assets')
+          PY
+
+      - name: Copiar la aplicación web al proyecto Android
+        run: npx cap sync android
+
+      - name: Compilar APK de Android
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Guardar APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: starseeked-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publicar APK descargable en Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="apk-${{ github.run_number }}"
+          cp android/app/build/outputs/apk/debug/app-debug.apk starseeked.apk
+          gh release create "$TAG" starseeked.apk --target "${{ github.sha }}" --title "starseeked Android $TAG" --notes "APK generado automáticamente desde la rama main. Descarga e instala starseeked en Android."name: Generar y publicar APK de starseeked
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Compilar APK Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Sin esto, cada ejecución generaba una firma de depuración distinta
+      # (Gradle crea ~/.android/debug.keystore con una clave aleatoria nueva
+      # si no existe) y Android rechaza instalar un APK firmado con una
+      # clave distinta a la ya instalada — por eso el APK "no se actualizaba"
+      # aunque la build terminara bien: en realidad la instalación fallaba
+      # en silencio y se quedaba la app vieja. Usando siempre el mismo
+      # debug.keystore del repositorio, todas las versiones quedan firmadas
+      # igual y Android sí puede actualizar la app existente.
+      - name: Usar una firma de depuración fija (para poder actualizar la app)
+        run: |
+          mkdir -p ~/.android
+          cp debug.keystore ~/.android/debug.keystore
+
+      - name: Instalar Capacitor
+        run: npm install
+
+      - name: Preparar archivos web
+        run: |
+          mkdir -p www
+          cp index.html app.js styles.css manifest.webmanifest sw.js icon.svg www/
+
+      - name: Crear proyecto Android
+        run: npx cap add android
+
+      # La actividad que genera Capacitor (BridgeActivity) no reserva hueco
+      # para la barra de estado ni para el "notch"/cámara: no tiene ningún
+      # código para eso. Antes no se notaba porque el propio Android lo
+      # hacía solo, pero esta app ya apunta a Android 15 (API 35), y desde
+      # esa versión el sistema OBLIGA a dibujar la app "de borde a borde" y
+      # deja de reservar ese hueco automáticamente — por eso, sin código
+      # propio, queda un hueco en blanco arriba (o la cabecera se tapa,
+      # según el móvil): la propia página web nunca llega a saber cuánto
+      # mide de verdad la barra de estado en ese teléfono.
+      # Sustituimos MainActivity.java por una versión que sí mide ese hueco
+      # en cada móvil (a través de los WindowInsets nativos de Android) y
+      # se lo aplica como margen NATIVO al WebView — no como CSS —, así el
+      # hueco de arriba mide siempre justo lo que ocupa la barra de estado
+      # real, nunca de más ni de menos, y funciona igual en cualquier
+      # versión de Android (con o sin borde a borde forzado).
+      - name: Corregir el hueco superior (gestionar los recortes de pantalla)
+        run: |
+          cat > android/app/src/main/java/com/starseeked/player/MainActivity.java <<'JAVA'
+          package com.starseeked.player;
+
+          import android.os.Bundle;
+          import androidx.core.graphics.Insets;
+          import androidx.core.view.ViewCompat;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  // Hay que registrar los plugins propios (los que no vienen de
+                  // un paquete npm) ANTES de super.onCreate(): es justo ahí
+                  // donde Capacitor arranca el puente y carga la lista de
+                  // plugins disponibles para la página web.
+                  registerPlugin(MediaNotificationPlugin.class);
+                  super.onCreate(savedInstanceState);
+
+                  // Dibuja la app de borde a borde en todas las versiones de
+                  // Android (a partir de Android 15 el sistema ya lo obliga
+                  // igualmente), para que el paso de abajo reciba siempre
+                  // los insets reales en vez de que el sistema ya se los
+                  // haya "comido" antes de llegar aquí.
+                  WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+
+                  if (bridge != null && bridge.getWebView() != null) {
+                      ViewCompat.setOnApplyWindowInsetsListener(bridge.getWebView(), (view, insets) -> {
+                          Insets bars = insets.getInsets(
+                              WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
+                          );
+                          // Margen nativo real (no CSS): el WebView empieza a
+                          // dibujar justo donde termina la barra de estado /
+                          // gestos, ni un pixel antes ni un pixel de más.
+                          view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                          return WindowInsetsCompat.CONSUMED;
+                      });
+                  }
+              }
+          }
+          JAVA
+
+      # La app ya usa la Media Session del navegador (navigator.mediaSession
+      # en app.js: título/artista/portada y botones de reproducir, pausar,
+      # anterior y siguiente) pero eso, dentro del WebView de Android que usa
+      # la app empaquetada (a diferencia de Chrome como aplicación), NO se
+      # convierte por sí solo en una notificación real del sistema — por eso
+      # el "widget" de notificación nunca llegaba a aparecer, por más veces
+      # que se revisara el CSS o la propia app.js: falta por completo la
+      # pieza nativa de Android que sí construye esa notificación.
+      # Añadimos esa pieza: un servicio en primer plano (MediaPlaybackService)
+      # con una MediaSession real de Android (con controles de verdad,
+      # visible también en la pantalla de bloqueo) y un plugin de Capacitor
+      # (MediaNotificationPlugin) que conecta ese servicio con app.js en los
+      # dos sentidos — la web le manda la canción/estado actual, y la
+      # notificación le devuelve a la web las pulsaciones de sus botones.
+      - name: Añadir el widget nativo de notificación de reproducción
+        run: |
+          cat > android/app/src/main/java/com/starseeked/player/MediaPlaybackService.java <<'JAVA'
+          package com.starseeked.player;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
           import android.os.Build;
           import android.os.IBinder;
           import android.os.PowerManager;
